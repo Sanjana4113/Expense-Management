@@ -80,6 +80,10 @@ export default function Home() {
   const flowCategories = monthCategoryTotals.slice(0, 4);
   const futureExpenses = expenses.filter((expense) => new Date(`${expense.date}T23:59:59`) > now).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
   const monthProgress = Math.round((now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) * 100);
+  const incomeForFlow = monthlyIncome || 0;
+  const spentPercent = incomeForFlow > 0 ? Math.min((thisMonth / incomeForFlow) * 100, 100) : thisMonth > 0 ? 100 : 0;
+  const remainingPercent = Math.max(100 - spentPercent, 0);
+  const isOverBudget = incomeForFlow > 0 && thisMonth > incomeForFlow;
 
   async function saveIncome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -207,18 +211,19 @@ export default function Home() {
         </aside>
 
         <section className="money-flow-card">
-          <div className="flow-card-title"><h1>Money flow</h1><span title="Income compared with this month's expenses">i</span></div>
-          <div className="flow-visual">
-            <div className="income-node"><strong>{monthlyIncome === null ? "Set income" : money.format(monthlyIncome)}</strong><span>Monthly income</span></div>
-            <svg className="flow-lines" viewBox="0 0 760 390" preserveAspectRatio="none" aria-hidden="true">
-              <defs><linearGradient id="spentFlow"><stop stopColor="#fff" stopOpacity=".8"/><stop offset="1" stopColor="#ff7168"/></linearGradient><linearGradient id="savedFlow"><stop stopColor="#fff" stopOpacity=".6"/><stop offset="1" stopColor="#356cff"/></linearGradient></defs>
-              <path className="flow-path spent-path" d="M120 195 C310 195 350 75 650 75"/><path className="flow-path saved-path" d="M120 195 C330 195 390 185 650 190"/>
-              <path className="branch-path" d="M245 195 C285 225 230 285 190 320"/><path className="branch-path" d="M265 195 C335 225 335 275 330 320"/><path className="branch-path" d="M290 195 C385 220 430 270 470 320"/><path className="branch-path" d="M315 195 C430 215 545 260 610 320"/>
-            </svg>
-            <div className="flow-output spent-output"><strong>{money.format(thisMonth)}</strong><span>Spent</span><small>{monthlyIncome ? Math.round((thisMonth / monthlyIncome) * 100) : 0}%</small></div>
-            <div className="flow-output saved-output"><strong>{monthlySavings === null ? "—" : money.format(monthlySavings)}</strong><span>{monthlySavings !== null && monthlySavings < 0 ? "Over budget" : "Saved"}</span><small>{monthlyIncome && monthlySavings ? Math.round((monthlySavings / monthlyIncome) * 100) : 0}%</small></div>
-            <div className="flow-category-row">{flowCategories.map((item) => <div className={`flow-category ${item.name.toLowerCase()}`} key={item.name}><span>{item.name.slice(0, 1)}</span><strong>{item.name}</strong><small>{money.format(item.amount)}</small><i style={{ width: `${thisMonth ? (item.amount / thisMonth) * 100 : 0}%` }} /></div>)}</div>
+          <div className="flow-card-title"><div><h1>Money flow</h1><p>See exactly where this month&apos;s income is going.</p></div><span className="flow-period">{now.toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span></div>
+          <div className="balance-overview">
+            <div className="balance-source"><span>Monthly income</span><strong>{monthlyIncome === null ? "Not set" : money.format(monthlyIncome)}</strong><button onClick={() => setEditingIncome(true)}>{monthlyIncome === null ? "Add income" : "Edit"}</button></div>
+            <div className="balance-journey">
+              <div className="journey-labels"><span>0</span><span>{monthlyIncome === null ? "Set income to compare" : money.format(monthlyIncome)}</span></div>
+              <div className="journey-track" role="img" aria-label={`${spentPercent.toFixed(0)} percent spent and ${remainingPercent.toFixed(0)} percent remaining`}><i className="journey-spent" style={{ width: `${spentPercent}%` }} /><i className="journey-remaining" style={{ width: `${remainingPercent}%` }} /></div>
+              <div className="journey-legend"><span><i />Spent {Math.round(spentPercent)}%</span><span><i />Remaining {Math.round(remainingPercent)}%</span></div>
+              {isOverBudget && <p className="budget-warning">You are {money.format(thisMonth - incomeForFlow)} over this month&apos;s income.</p>}
+            </div>
+            <div className="balance-results"><div className="result-spent"><span>Spent</span><strong>{money.format(thisMonth)}</strong></div><div className={isOverBudget ? "result-saved negative" : "result-saved"}><span>{isOverBudget ? "Over budget" : "Remaining"}</span><strong>{monthlySavings === null ? "—" : money.format(Math.abs(monthlySavings))}</strong></div></div>
           </div>
+          <div className="category-flow-heading"><div><span>Expense breakdown</span><strong>{flowCategories[0]?.amount ? `${flowCategories[0].name} is highest` : "No spending yet"}</strong></div><span>{expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).length} transactions</span></div>
+          <div className="flow-category-grid">{flowCategories.map((item, index) => <article className={`flow-category-card ${item.name.toLowerCase()}`} key={item.name}><div><span>{String(index + 1).padStart(2, "0")}</span><i>{item.name.slice(0, 1)}</i></div><strong>{item.name}</strong><b>{money.format(item.amount)}</b><div className="category-meter"><i style={{ width: `${thisMonth ? (item.amount / thisMonth) * 100 : 0}%` }} /></div><small>{thisMonth ? Math.round((item.amount / thisMonth) * 100) : 0}% of monthly spend</small></article>)}</div>
         </section>
 
         <aside className="upcoming-rail"><div className="upcoming-title"><h2>Upcoming</h2><span>Next entries</span></div>{futureExpenses.length ? futureExpenses.map((expense) => <div className="upcoming-item" key={expense._id}><span className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</span><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b></div>) : <div className="upcoming-empty"><span>✓</span><strong>Nothing scheduled</strong><small>Future-dated expenses appear here.</small></div>}<button className="rail-button" onClick={() => setShowQuickEntry(true)}>Schedule expense <span>›</span></button></aside>
