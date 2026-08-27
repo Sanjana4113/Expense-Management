@@ -16,6 +16,10 @@ const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export default function Home() {
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
@@ -37,6 +41,7 @@ export default function Home() {
   const [incomeStatus, setIncomeStatus] = useState("");
   const [editingIncome, setEditingIncome] = useState(false);
   const [showQuickEntry, setShowQuickEntry] = useState(false);
+  const [activityYear, setActivityYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
@@ -65,6 +70,8 @@ export default function Home() {
   );
   const visibleExpenses = showAll ? filteredExpenses : filteredExpenses.slice(0, 5);
   const now = new Date();
+  const currentYear = now.getFullYear();
+  const todayKey = dateKey(now);
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const thisMonth = expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0);
   const monthlyTrend = Array.from({ length: 6 }, (_, index) => {
@@ -84,6 +91,51 @@ export default function Home() {
   const spentPercent = incomeForFlow > 0 ? Math.min((thisMonth / incomeForFlow) * 100, 100) : thisMonth > 0 ? 100 : 0;
   const remainingPercent = Math.max(100 - spentPercent, 0);
   const isOverBudget = incomeForFlow > 0 && thisMonth > incomeForFlow;
+  const activityYears = Array.from(new Set([currentYear, ...expenses.map((expense) => Number(expense.date.slice(0, 4))).filter(Number.isFinite)])).sort((a, b) => b - a);
+  const calendarData = (() => {
+    const daily = new Map<string, { amount: number; count: number }>();
+    expenses.filter((expense) => expense.date.startsWith(`${activityYear}-`)).forEach((expense) => {
+      const current = daily.get(expense.date) || { amount: 0, count: 0 };
+      daily.set(expense.date, { amount: current.amount + expense.amount, count: current.count + 1 });
+    });
+
+    const amounts = [...daily.values()].map((day) => day.amount).sort((a, b) => a - b);
+    const quartile = (position: number) => amounts[Math.floor((amounts.length - 1) * position)] || 0;
+    const thresholds = [quartile(.25), quartile(.5), quartile(.75)];
+    const firstDay = new Date(activityYear, 0, 1);
+    const lastDay = new Date(activityYear, 11, 31);
+    const cells: ({ key: string; date: Date; amount: number; count: number; level: number } | null)[] = Array(firstDay.getDay()).fill(null);
+    for (const day = new Date(firstDay); day <= lastDay; day.setDate(day.getDate() + 1)) {
+      const key = dateKey(day);
+      const value = daily.get(key) || { amount: 0, count: 0 };
+      const level = value.amount === 0 ? 0 : value.amount <= thresholds[0] ? 1 : value.amount <= thresholds[1] ? 2 : value.amount <= thresholds[2] ? 3 : 4;
+      cells.push({ key, date: new Date(day), ...value, level });
+    }
+    while (cells.length % 7) cells.push(null);
+
+    const months = Array.from({ length: 12 }, (_, month) => {
+      const day = new Date(activityYear, month, 1);
+      const dayOfYear = Math.floor((day.getTime() - firstDay.getTime()) / 86_400_000);
+      return { label: day.toLocaleDateString("en-US", { month: "short" }), week: Math.floor((firstDay.getDay() + dayOfYear) / 7) + 1 };
+    });
+    const weekdayCounts = Array(7).fill(0) as number[];
+    daily.forEach((value, key) => { weekdayCounts[new Date(`${key}T12:00:00`).getDay()] += value.count; });
+    const mostActiveIndex = weekdayCounts.indexOf(Math.max(...weekdayCounts));
+    const highest = [...daily.values()].reduce((maximum, day) => Math.max(maximum, day.amount), 0);
+    const streakEnd = activityYear === currentYear ? new Date(`${todayKey}T12:00:00`) : lastDay;
+    let streak = 0;
+    for (const day = new Date(streakEnd); daily.has(dateKey(day)); day.setDate(day.getDate() - 1)) streak += 1;
+
+    return {
+      cells,
+      months,
+      activeDays: daily.size,
+      total: [...daily.values()].reduce((sum, day) => sum + day.amount, 0),
+      mostActive: daily.size ? ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][mostActiveIndex] : "—",
+      highest,
+      streak,
+    };
+  })();
 
   async function saveIncome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -227,6 +279,18 @@ export default function Home() {
         </section>
 
         <aside className="upcoming-rail"><div className="upcoming-title"><h2>Upcoming</h2><span>Next entries</span></div>{futureExpenses.length ? futureExpenses.map((expense) => <div className="upcoming-item" key={expense._id}><span className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</span><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b></div>) : <div className="upcoming-empty"><span>✓</span><strong>Nothing scheduled</strong><small>Future-dated expenses appear here.</small></div>}<button className="rail-button" onClick={() => setShowQuickEntry(true)}>Schedule expense <span>›</span></button></aside>
+      </section>
+
+      <section className="expense-activity-panel">
+        <header className="heatmap-header"><div><h2>Expense activity</h2><p>Your spending, day by day</p></div><div><select aria-label="Activity year" value={activityYear} onChange={(event) => setActivityYear(Number(event.target.value))}>{activityYears.map((year) => <option key={year}>{year}</option>)}</select><span>{calendarData.activeDays} active days · {money.format(calendarData.total)} tracked</span></div></header>
+        <div className="heatmap-scroll">
+          <div className="heatmap-canvas">
+            <div className="heatmap-months">{calendarData.months.map((month) => <span key={month.label} style={{ gridColumnStart: month.week }}>{month.label}</span>)}</div>
+            <div className="heatmap-body"><div className="heatmap-weekdays"><span>Mon</span><span>Wed</span><span>Fri</span></div><div className="heatmap-grid">{calendarData.cells.map((cell, index) => cell ? <button key={cell.key} className={`heat-cell level-${cell.level}`} tabIndex={cell.count ? 0 : -1} aria-label={`${cell.date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}: ${money.format(cell.amount)}, ${cell.count} expenses`} data-tooltip={`${cell.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · ${money.format(cell.amount)} · ${cell.count} expense${cell.count === 1 ? "" : "s"}`} /> : <span className="heat-cell spacer" key={`spacer-${index}`} />)}</div></div>
+          </div>
+        </div>
+        <div className="heatmap-meta"><div className="heatmap-legend"><span>Less</span>{[0, 1, 2, 3, 4].map((level) => <i className={`level-${level}`} key={level} />)}<span>More</span><small>Color intensity represents total spent that day</small></div></div>
+        <div className="heatmap-insights"><div><i>☆</i><span>Most active: <strong>{calendarData.mostActive}</strong></span></div><div><i>↗</i><span>Highest day: <strong>{money.format(calendarData.highest)}</strong></span></div><div><i>♨</i><span>Current streak: <strong>{calendarData.streak} day{calendarData.streak === 1 ? "" : "s"}</strong></span></div></div>
       </section>
 
       {(monthlyIncome === null || editingIncome) && <section className="flow-income-prompt"><div><span>Monthly planning</span><h2>What is your monthly income?</h2><p>This lets Ledgerly calculate what remains after your expenses.</p></div><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{editingIncome && monthlyIncome !== null && <button type="button" className="prompt-cancel" onClick={() => setEditingIncome(false)}>Cancel</button>}{incomeStatus && <p>{incomeStatus}</p>}</form></section>}
