@@ -16,6 +16,10 @@ Email/password signup requires `MONGODB_URI`, `MONGODB_DB`, and `AUTH_SECRET`. P
 
 For Google sign-in, also add `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. In Google Cloud Console, create a Web OAuth client and add `http://localhost:3000/api/auth/callback/google` as a local redirect URI. For Vercel, add `https://YOUR-VERCEL-DOMAIN/api/auth/callback/google` as an authorized redirect URI.
 
+## Admin portal
+
+The primary administrator accounts are `sanjanabh2003@gmail.com` and `indudhara2020@gmail.com`. When either account signs in, the dashboard offers a choice between the normal expense flow and `/admin`. Administrators can grant or revoke admin access for other email addresses from the portal. Primary administrators cannot be removed.
+
 ## Deploy to Vercel
 
 1. Push this repository to GitHub and import it at [vercel.com/new](https://vercel.com/new).

@@ -30,12 +30,18 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authError, setAuthError] = useState("");
   const [authPending, setAuthPending] = useState(false);
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
+  const [adminChoiceDismissed, setAdminChoiceDismissed] = useState(false);
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
     fetch("/api/expenses")
       .then((response) => response.json())
       .then((data: { expenses?: Expense[] }) => setExpenses(data.expenses || []))
+      .catch(() => undefined);
+    fetch("/api/admin/access")
+      .then((response) => response.json())
+      .then((data: { isAdmin?: boolean }) => setHasAdminAccess(Boolean(data.isAdmin)))
       .catch(() => undefined);
   }, [sessionStatus]);
 
@@ -142,8 +148,10 @@ export default function Home() {
     <main className="dashboard-shell">
       <nav className="topbar">
         <div className="brand"><span className="brand-mark">+</span><span>ledgerly</span></div>
-        <div className="nav-meta"><span className="live-dot" /> Cloud synced <span className="avatar">{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</span><button className="signout-button" onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button></div>
+        <div className="nav-meta"><span className="live-dot" /> Cloud synced {hasAdminAccess && <button className="admin-link" onClick={() => router.push("/admin")}>Admin portal</button>}<span className="avatar">{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</span><button className="signout-button" onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button></div>
       </nav>
+
+      {hasAdminAccess && !adminChoiceDismissed && <section className="admin-choice"><div><p className="eyebrow">ADMIN ACCESS</p><strong>Choose where you want to work.</strong></div><div><button className="choice-secondary" type="button" onClick={() => setAdminChoiceDismissed(true)}>Continue normal flow</button><button className="choice-primary" type="button" onClick={() => router.push("/admin")}>Open admin portal <span>↗</span></button></div></section>}
 
       <section className="intro-row">
         <div><p className="eyebrow">Thursday, August 27, 2026</p><h1>Know where<br /><em>it goes.</em></h1></div>
