@@ -41,6 +41,7 @@ export default function Home() {
   const [incomeStatus, setIncomeStatus] = useState("");
   const [editingIncome, setEditingIncome] = useState(false);
   const [showQuickEntry, setShowQuickEntry] = useState(false);
+  const [entryMode, setEntryMode] = useState<"add" | "schedule">("add");
   const [activityYear, setActivityYear] = useState(new Date().getFullYear());
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -92,6 +93,9 @@ export default function Home() {
   const spentPercent = incomeForFlow > 0 ? Math.min((thisMonth / incomeForFlow) * 100, 100) : thisMonth > 0 ? 100 : 0;
   const remainingPercent = Math.max(100 - spentPercent, 0);
   const isOverBudget = incomeForFlow > 0 && thisMonth > incomeForFlow;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = dateKey(tomorrow);
   const activityYears = Array.from(new Set([currentYear, ...expenses.map((expense) => Number(expense.date.slice(0, 4))).filter(Number.isFinite)])).sort((a, b) => b - a);
   const calendarData = (() => {
     const daily = new Map<string, { amount: number; count: number }>();
@@ -154,6 +158,10 @@ export default function Home() {
   async function addExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!title.trim() || !amount || Number(amount) <= 0) return;
+    if (entryMode === "schedule" && date < tomorrowKey) {
+      setStatus("Choose a future date for a scheduled expense.");
+      return;
+    }
     const response = await fetch("/api/expenses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -164,12 +172,19 @@ export default function Home() {
       setExpenses((current) => [data.expense, ...current]);
       setTitle("");
       setAmount("");
-      setStatus("Expense added");
+      setStatus(entryMode === "schedule" ? "Expense scheduled" : "Expense added");
       setShowQuickEntry(false);
       setTimeout(() => setStatus(""), 2000);
     } else {
       setStatus(data.error || "Could not add expense");
     }
+  }
+
+  function openExpenseEntry(mode: "add" | "schedule") {
+    setEntryMode(mode);
+    setStatus("");
+    if (mode === "schedule") setDate(tomorrowKey);
+    setShowQuickEntry(true);
   }
 
   async function removeExpense(id: string) {
@@ -248,7 +263,7 @@ export default function Home() {
       <nav className="flow-nav">
         <div className="flow-logo">ledgerly<span /></div>
         <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
-        <div className="flow-actions"><span className="flow-month">▣ {now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => setShowQuickEntry(true)}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
+        <div className="flow-actions"><span className="flow-month">▣ {now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
       </nav>
 
       {hasAdminAccess && !adminChoiceDismissed && <section className="flow-admin-choice"><span>You have administrator access.</span><button onClick={() => setAdminChoiceDismissed(true)}>Stay here</button><button onClick={() => router.push("/admin")}>Open admin portal ↗</button></section>}
@@ -279,7 +294,7 @@ export default function Home() {
           <div className="flow-category-grid">{flowCategories.map((item, index) => <article className={`flow-category-card ${item.name.toLowerCase()}`} key={item.name}><div><span>{String(index + 1).padStart(2, "0")}</span><i>{item.name.slice(0, 1)}</i></div><strong>{item.name}</strong><b>{money.format(item.amount)}</b><div className="category-meter"><i style={{ width: `${thisMonth ? (item.amount / thisMonth) * 100 : 0}%` }} /></div><small>{thisMonth ? Math.round((item.amount / thisMonth) * 100) : 0}% of monthly spend</small></article>)}</div>
         </section>
 
-        <aside className="upcoming-rail"><div className="upcoming-title"><h2>Upcoming</h2><span>Next entries</span></div>{futureExpenses.length ? futureExpenses.map((expense) => <div className="upcoming-item" key={expense._id}><span className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</span><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b></div>) : <div className="upcoming-empty"><span>✓</span><strong>Nothing scheduled</strong><small>Future-dated expenses appear here.</small></div>}<button className="rail-button" onClick={() => setShowQuickEntry(true)}>Schedule expense <span>›</span></button></aside>
+        <aside className="upcoming-rail"><div className="upcoming-title"><h2>Upcoming</h2><span>Next entries</span></div>{futureExpenses.length ? futureExpenses.map((expense) => <div className="upcoming-item" key={expense._id}><span className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</span><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b></div>) : <div className="upcoming-empty"><span>✓</span><strong>Nothing scheduled</strong><small>Future-dated expenses appear here.</small></div>}<button className="rail-button" onClick={() => openExpenseEntry("schedule")}>Schedule expense <span>›</span></button></aside>
       </section>
 
       <section className="expense-activity-panel">
@@ -294,15 +309,14 @@ export default function Home() {
         <div className="heatmap-insights"><div><i>☆</i><span>Most active: <strong>{calendarData.mostActive}</strong></span></div><div><i>↗</i><span>Highest day: <strong>{money.format(calendarData.highest)}</strong></span></div><div><i>♨</i><span>Current streak: <strong>{calendarData.streak} day{calendarData.streak === 1 ? "" : "s"}</strong></span></div></div>
       </section>
 
-      {(monthlyIncome === null || editingIncome) && <section className="flow-income-prompt"><div><span>Monthly planning</span><h2>What is your monthly income?</h2><p>This lets Ledgerly calculate what remains after your expenses.</p></div><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{editingIncome && monthlyIncome !== null && <button type="button" className="prompt-cancel" onClick={() => setEditingIncome(false)}>Cancel</button>}{incomeStatus && <p>{incomeStatus}</p>}</form></section>}
-
       <section className="activity-board" id="activity">
         <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div></div>
         <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className="activity-tile" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
         <div className="mini-trend"><span>6-month overview</span><div>{monthlyTrend.map((item) => <div className="mini-column" key={item.key}><strong>{item.amount ? money.format(item.amount) : "—"}</strong><i style={{ height: `${Math.max((item.amount / maxMonthlyAmount) * 100, item.amount ? 8 : 2)}%` }} /><small>{item.label}</small></div>)}</div></div>
       </section>
 
-      {showQuickEntry && <div className="entry-backdrop" role="presentation" onMouseDown={() => setShowQuickEntry(false)}><aside className="entry-drawer" role="dialog" aria-modal="true" aria-label="Add expense" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setShowQuickEntry(false)}>×</button><span>Quick entry</span><h2>Add expense</h2><form onSubmit={addExpense}><label>Description<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What did you spend on?" required /></label><div className="form-split"><label>Amount<div className="amount-input"><span>$</span><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label><label>Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label></div><label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><button className="flow-add" type="submit">Add to ledger <b>+</b></button>{status && <p className="form-status">{status}</p>}</form></aside></div>}
+      {editingIncome && <div className="entry-backdrop income-backdrop" role="presentation" onMouseDown={() => setEditingIncome(false)}><section className="income-modal" role="dialog" aria-modal="true" aria-labelledby="income-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setEditingIncome(false)}>×</button><span>Monthly planning</span><h2 id="income-modal-title">{monthlyIncome === null ? "Add monthly income" : "Update monthly income"}</h2><p>This lets Ledgerly calculate what remains after your monthly expenses.</p><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input autoFocus type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section></div>}
+      {showQuickEntry && <div className="entry-backdrop" role="presentation" onMouseDown={() => setShowQuickEntry(false)}><aside className="entry-drawer" role="dialog" aria-modal="true" aria-label={entryMode === "schedule" ? "Schedule expense" : "Add expense"} onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setShowQuickEntry(false)}>×</button><span>{entryMode === "schedule" ? "Upcoming payment" : "Quick entry"}</span><h2>{entryMode === "schedule" ? "Schedule expense" : "Add expense"}</h2><form onSubmit={addExpense}><label>Description<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What will you spend on?" required /></label><div className="form-split"><label>Amount<div className="amount-input"><span>$</span><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label><label>Date<input type="date" min={entryMode === "schedule" ? tomorrowKey : undefined} value={date} onChange={(event) => setDate(event.target.value)} required /></label></div><label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><button className="flow-add" type="submit">{entryMode === "schedule" ? "Schedule expense" : "Add to ledger"} <b>+</b></button>{status && <p className="form-status">{status}</p>}</form></aside></div>}
     </main>
   );
 }
