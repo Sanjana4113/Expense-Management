@@ -10,6 +10,14 @@ type Expense = {
   category: string;
   amount: number;
   date: string;
+  source?: "bank";
+};
+
+type BankConnection = {
+  _id: string;
+  status: "active" | "reauthorization_required";
+  accounts: { accountId: string; type: "account" | "card"; name: string; providerName: string }[];
+  lastSyncedAt?: string;
 };
 
 const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
@@ -44,13 +52,17 @@ export default function Home() {
   const [entryMode, setEntryMode] = useState<"add" | "schedule">("add");
   const [activityYear, setActivityYear] = useState(new Date().getFullYear());
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [bankConfigured, setBankConfigured] = useState(false);
+  const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
+  const [bankStatus, setBankStatus] = useState("");
+  const [bankSyncing, setBankSyncing] = useState(false);
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
-    fetch("/api/expenses")
+    const loadExpenses = () => fetch("/api/expenses")
       .then((response) => response.json())
-      .then((data: { expenses?: Expense[] }) => setExpenses(data.expenses || []))
-      .catch(() => undefined);
+      .then((data: { expenses?: Expense[] }) => setExpenses(data.expenses || []));
+    loadExpenses().catch(() => undefined);
     fetch("/api/admin/access")
       .then((response) => response.json())
       .then((data: { isAdmin?: boolean }) => setHasAdminAccess(Boolean(data.isAdmin)))
@@ -64,6 +76,22 @@ export default function Home() {
         }
       })
       .catch(() => undefined);
+    fetch("/api/banking/connections")
+      .then((response) => response.json())
+      .then(async (data: { configured?: boolean; connections?: BankConnection[] }) => {
+        setBankConfigured(Boolean(data.configured));
+        setBankConnections(data.connections || []);
+        if (data.connections?.some((connection) => connection.status === "active")) {
+          const response = await fetch("/api/banking/sync", { method: "POST" });
+          if (response.ok) await loadExpenses();
+        }
+      })
+      .catch(() => undefined);
+    const bankResult = new URLSearchParams(window.location.search).get("bank");
+    if (bankResult) {
+      queueMicrotask(() => setBankStatus(bankResult === "connected" ? "Account connected. Your purchases are ready to sync." : bankResult === "cancelled" ? "Bank connection was cancelled." : "The bank account could not be connected."));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, [sessionStatus]);
 
   const filteredExpenses = useMemo(
@@ -186,6 +214,31 @@ export default function Home() {
     if (response.ok) setExpenses((current) => current.filter((expense) => expense._id !== id));
   }
 
+  async function syncBank() {
+    setBankSyncing(true);
+    setBankStatus("");
+    const response = await fetch("/api/banking/sync", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) setBankStatus(data.error || "Could not sync your bank account.");
+    else {
+      setBankStatus(data.imported ? `${data.imported} new purchase${data.imported === 1 ? "" : "s"} imported.` : "Everything is up to date.");
+      const expensesResponse = await fetch("/api/expenses");
+      const expensesData = await expensesResponse.json();
+      setExpenses(expensesData.expenses || []);
+      setBankConnections((current) => current.map((connection) => ({ ...connection, lastSyncedAt: data.syncedAt })));
+    }
+    setBankSyncing(false);
+  }
+
+  async function disconnectBank() {
+    if (!window.confirm("Disconnect this bank? Imported expenses will stay in your ledger.")) return;
+    const response = await fetch("/api/banking/connections", { method: "DELETE" });
+    if (response.ok) {
+      setBankConnections([]);
+      setBankStatus("Bank disconnected. Previously imported expenses were kept.");
+    }
+  }
+
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthError("");
@@ -256,7 +309,7 @@ export default function Home() {
     <main className={`flow-shell theme-${theme}`}>
       <nav className="flow-nav">
         <div className="flow-logo">ledgerly<span /></div>
-        <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
+        <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => document.getElementById("connected-accounts")?.scrollIntoView({ behavior: "smooth" })}>Accounts</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
         <div className="flow-actions"><span className="flow-month">▣ {now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
       </nav>
 
@@ -291,6 +344,18 @@ export default function Home() {
         <aside className="upcoming-rail"><div className="upcoming-title"><h2>Upcoming</h2><span>Next entries</span></div>{futureExpenses.length ? futureExpenses.map((expense) => <div className="upcoming-item" key={expense._id}><span className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</span><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b></div>) : <div className="upcoming-empty"><span>✓</span><strong>Nothing scheduled</strong><small>Future-dated expenses appear here.</small></div>}<button className="rail-button" onClick={() => openExpenseEntry("schedule")}>Schedule expense <span>›</span></button></aside>
       </section>
 
+      <section className="bank-panel" id="connected-accounts">
+        <div className="bank-panel-copy"><span>Connected accounts</span><h2>Bring card purchases into your ledger.</h2><p>Connect through secure Open Banking consent. Ledgerly never receives your card number, PIN, or bank password.</p></div>
+        {bankConnections.length ? <div className="bank-connection">
+          <div className="bank-mark">↗</div>
+          <div><strong>{bankConnections[0].accounts[0]?.providerName || "Connected bank"}</strong><span>{bankConnections[0].accounts.length} account{bankConnections[0].accounts.length === 1 ? "" : "s"} · {bankConnections[0].status === "active" ? "Connected" : "Reconnect required"}</span>{bankConnections[0].lastSyncedAt && <small>Last synced {new Date(bankConnections[0].lastSyncedAt).toLocaleString()}</small>}</div>
+          <button className="bank-sync" type="button" onClick={syncBank} disabled={bankSyncing}>{bankSyncing ? "Syncing…" : "Sync now"}</button>
+          <button className="bank-disconnect" type="button" onClick={disconnectBank}>Disconnect</button>
+        </div> : <div className="bank-connect-state"><div><strong>{bankConfigured ? "Connect your bank or card" : "Open Banking setup required"}</strong><span>{bankConfigured ? "You will choose your bank and approve read-only transaction access." : "Add your TrueLayer credentials to enable secure bank connections."}</span></div>{bankConfigured ? <a className="bank-connect" href="/api/banking/connect">Connect account <b>↗</b></a> : <span className="bank-disabled">Not configured</span>}</div>}
+        {bankStatus && <p className="bank-status" role="status">{bankStatus}</p>}
+        <div className="bank-trust"><span>Read-only access</span><span>Encrypted connection</span><span>Duplicate protected</span><span>Automatic categories</span></div>
+      </section>
+
       <section className="expense-activity-panel">
         <header className="heatmap-header"><div><h2>Expense activity</h2><p>Your spending, day by day</p></div><div><select aria-label="Activity year" value={activityYear} onChange={(event) => setActivityYear(Number(event.target.value))}>{activityYears.map((year) => <option key={year}>{year}</option>)}</select><span>{calendarData.activeDays} active days · {money.format(calendarData.total)} tracked</span></div></header>
         <div className="heatmap-scroll">
@@ -305,7 +370,7 @@ export default function Home() {
 
       <section className="activity-board" id="activity">
         <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div></div>
-        <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className="activity-tile" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
+        <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className="activity-tile" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}{expense.source === "bank" && <span className="bank-source">Synced</span>}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
       </section>
 
       {editingIncome && <div className="entry-backdrop income-backdrop" role="presentation" onMouseDown={() => setEditingIncome(false)}><section className="income-modal" role="dialog" aria-modal="true" aria-labelledby="income-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setEditingIncome(false)}>×</button><span>Monthly planning</span><h2 id="income-modal-title">{monthlyIncome === null ? "Add monthly income" : "Update monthly income"}</h2><p>This lets Ledgerly calculate what remains after your monthly expenses.</p><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input autoFocus type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section></div>}

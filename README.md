@@ -16,6 +16,24 @@ Email/password signup requires `MONGODB_URI`, `MONGODB_DB`, and `AUTH_SECRET`. P
 
 For Google sign-in, also add `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. In Google Cloud Console, create a Web OAuth client and add `http://localhost:3000/api/auth/callback/google` as a local redirect URI. For Vercel, add `https://YOUR-VERCEL-DOMAIN/api/auth/callback/google` as an authorized redirect URI.
 
+## Bank and card transaction syncing
+
+Ledgerly can import completed debit transactions from bank accounts and cards through TrueLayer Open Banking. Users connect through TrueLayer's hosted consent screen; Ledgerly never receives their bank password, PIN, or full card number. Access and refresh tokens are encrypted at rest, and imported transactions use their provider transaction ID to prevent duplicates.
+
+Create a TrueLayer application, register `http://localhost:3000/api/banking/callback` (and the equivalent production URL), then configure:
+
+```env
+TRUELAYER_CLIENT_ID=your-client-id
+TRUELAYER_CLIENT_SECRET=your-client-secret
+TRUELAYER_REDIRECT_URI=http://localhost:3000/api/banking/callback
+TRUELAYER_ENVIRONMENT=sandbox
+TRUELAYER_PROVIDERS=mock
+# Optional: use a separate high-entropy secret instead of AUTH_SECRET for token encryption.
+BANK_TOKEN_ENCRYPTION_KEY=replace-with-a-long-random-secret
+```
+
+Use `TRUELAYER_ENVIRONMENT=production` and the provider groups enabled for your TrueLayer application when going live. MongoDB is required for connected accounts. Transactions synchronize when the user opens the dashboard and whenever they select **Sync now**.
+
 ## Admin portal
 
 The primary administrator accounts are `sanjanabh2003@gmail.com` and `indudhara2020@gmail.com`. When either account signs in, the dashboard offers a choice between the normal expense flow and `/admin`. Administrators can grant or revoke admin access for other email addresses from the portal. Primary administrators cannot be removed.
