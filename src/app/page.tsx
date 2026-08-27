@@ -28,6 +28,7 @@ export default function Home() {
   const [category, setCategory] = useState("Food");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [filter, setFilter] = useState("All");
+  const [showAll, setShowAll] = useState(false);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function Home() {
     () => filter === "All" ? expenses : expenses.filter((expense) => expense.category === filter),
     [expenses, filter],
   );
+  const visibleExpenses = showAll ? filteredExpenses : filteredExpenses.slice(0, 5);
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const thisMonth = expenses.filter((expense) => expense.date.startsWith("2026-08")).reduce((sum, expense) => sum + expense.amount, 0);
 
@@ -89,9 +91,9 @@ export default function Home() {
 
       <section className="content-grid">
         <div className="expenses-panel">
-          <div className="section-heading"><div><p className="eyebrow">Your activity</p><h2>Recent expenses</h2></div><button className="text-button" onClick={() => setFilter("All")}>View all <span>↗</span></button></div>
-          <div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => setFilter(item)}>{item}</button>)}</div>
-          <div className="expense-list">{filteredExpenses.length ? filteredExpenses.map((expense) => <div className="expense-row" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div className="expense-info"><strong>{expense.title}</strong><span>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></div><strong className="expense-amount">{money.format(expense.amount)}</strong><button className="delete-button" aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></div>) : <p className="empty-state">No expenses in this category yet.</p>}</div>
+          <div className="section-heading"><div><p className="eyebrow">Your activity</p><h2>{showAll ? "All expenses" : "Recent expenses"}</h2></div>{filteredExpenses.length > 5 && <button className="text-button" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show less" : "View all"} <span>↗</span></button>}</div>
+          <div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div>
+          <div className="expense-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <div className="expense-row" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div className="expense-info"><strong>{expense.title}</strong><span>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></div><strong className="expense-amount">{money.format(expense.amount)}</strong><button className="delete-button" aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></div>) : <p className="empty-state">No expenses in this category yet.</p>}</div>
         </div>
         <aside className="add-panel"><p className="eyebrow">Quick entry</p><h2>Add expense</h2><form onSubmit={addExpense}><label>Description<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What did you spend on?" required /></label><div className="form-split"><label>Amount<div className="amount-input"><span>$</span><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label><label>Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label></div><label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><button className="submit-button" type="submit">Add to ledger <span>+</span></button>{status && <p className="form-status">{status}</p>}</form></aside>
       </section>
