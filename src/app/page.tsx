@@ -36,6 +36,7 @@ export default function Home() {
   const [incomeInput, setIncomeInput] = useState("");
   const [incomeStatus, setIncomeStatus] = useState("");
   const [editingIncome, setEditingIncome] = useState(false);
+  const [showQuickEntry, setShowQuickEntry] = useState(false);
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
@@ -63,14 +64,9 @@ export default function Home() {
     [expenses, filter],
   );
   const visibleExpenses = showAll ? filteredExpenses : filteredExpenses.slice(0, 5);
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const now = new Date();
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const thisMonth = expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0);
-  const categoryTotals = categories.map((name) => ({ name, amount: expenses.filter((expense) => expense.category === name).reduce((sum, expense) => sum + expense.amount, 0) }));
-  const topCategory = categoryTotals.reduce((top, item) => item.amount > top.amount ? item : top, { name: "—", amount: 0 });
-  const topCategoryPercent = total > 0 ? Math.round((topCategory.amount / total) * 100) : 0;
-  const maxCategoryAmount = Math.max(...categoryTotals.map((item) => item.amount), 1);
   const monthlyTrend = Array.from({ length: 6 }, (_, index) => {
     const month = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
     const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
@@ -78,6 +74,12 @@ export default function Home() {
   });
   const maxMonthlyAmount = Math.max(...monthlyTrend.map((item) => item.amount), 1);
   const monthlySavings = monthlyIncome === null ? null : monthlyIncome - thisMonth;
+  const monthCategoryTotals = categories
+    .map((name) => ({ name, amount: expenses.filter((expense) => expense.category === name && expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0) }))
+    .sort((a, b) => b.amount - a.amount);
+  const flowCategories = monthCategoryTotals.slice(0, 4);
+  const futureExpenses = expenses.filter((expense) => new Date(`${expense.date}T23:59:59`) > now).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+  const monthProgress = Math.round((now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) * 100);
 
   async function saveIncome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,6 +108,7 @@ export default function Home() {
       setTitle("");
       setAmount("");
       setStatus("Expense added");
+      setShowQuickEntry(false);
       setTimeout(() => setStatus(""), 2000);
     } else {
       setStatus(data.error || "Could not add expense");
@@ -184,42 +187,52 @@ export default function Home() {
   );
 
   return (
-    <main className="dashboard-shell">
-      <nav className="topbar">
-        <div className="brand"><span className="brand-mark">+</span><span>ledgerly</span></div>
-        <div className="nav-meta"><span className="live-dot" /> Cloud synced {hasAdminAccess && <button className="admin-link" onClick={() => router.push("/admin")}>Admin portal</button>}<span className="avatar">{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</span><button className="signout-button" onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button></div>
+    <main className="flow-shell">
+      <nav className="flow-nav">
+        <div className="flow-logo">ledgerly<span /></div>
+        <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
+        <div className="flow-actions"><span className="flow-month">▣ {now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => setShowQuickEntry(true)}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
       </nav>
 
-      {hasAdminAccess && !adminChoiceDismissed && <section className="admin-choice"><div><p className="eyebrow">ADMIN ACCESS</p><strong>Choose where you want to work.</strong></div><div><button className="choice-secondary" type="button" onClick={() => setAdminChoiceDismissed(true)}>Continue normal flow</button><button className="choice-primary" type="button" onClick={() => router.push("/admin")}>Open admin portal <span>↗</span></button></div></section>}
+      {hasAdminAccess && !adminChoiceDismissed && <section className="flow-admin-choice"><span>You have administrator access.</span><button onClick={() => setAdminChoiceDismissed(true)}>Stay here</button><button onClick={() => router.push("/admin")}>Open admin portal ↗</button></section>}
 
-      <section className="intro-row">
-        <div><p className="eyebrow">{now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p><h1>Know where<br /><em>it goes.</em></h1></div>
-        <p className="intro-copy">A clear view of your spending,<br />so your money can do more.</p>
+      <section className="flow-dashboard">
+        <aside className="month-rail">
+          <div><span>{now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><small>{new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate()} days left</small></div>
+          <div className="progress-ring" style={{ "--progress": `${monthProgress * 3.6}deg` } as React.CSSProperties}><strong>{monthProgress}%</strong><span>of month</span></div>
+          <div className="rail-metric"><span>Income</span><strong>{monthlyIncome === null ? "Not set" : money.format(monthlyIncome)}</strong><i style={{ width: monthlyIncome === null ? "0%" : "100%" }} /></div>
+          <div className="rail-metric spent"><span>Spent</span><strong>{money.format(thisMonth)}</strong><i style={{ width: `${monthlyIncome ? Math.min((thisMonth / monthlyIncome) * 100, 100) : 0}%` }} /></div>
+          <div className="rail-metric saved"><span>Saved</span><strong>{monthlySavings === null ? "—" : money.format(monthlySavings)}</strong><i style={{ width: `${monthlyIncome && monthlySavings ? Math.max(Math.min((monthlySavings / monthlyIncome) * 100, 100), 0) : 0}%` }} /></div>
+          <button className="rail-button" onClick={() => setEditingIncome(true)}>{monthlyIncome === null ? "Set monthly income" : "Update income"} <span>›</span></button>
+        </aside>
+
+        <section className="money-flow-card">
+          <div className="flow-card-title"><h1>Money flow</h1><span title="Income compared with this month's expenses">i</span></div>
+          <div className="flow-visual">
+            <div className="income-node"><strong>{monthlyIncome === null ? "Set income" : money.format(monthlyIncome)}</strong><span>Monthly income</span></div>
+            <svg className="flow-lines" viewBox="0 0 760 390" preserveAspectRatio="none" aria-hidden="true">
+              <defs><linearGradient id="spentFlow"><stop stopColor="#fff" stopOpacity=".8"/><stop offset="1" stopColor="#ff7168"/></linearGradient><linearGradient id="savedFlow"><stop stopColor="#fff" stopOpacity=".6"/><stop offset="1" stopColor="#356cff"/></linearGradient></defs>
+              <path className="flow-path spent-path" d="M120 195 C310 195 350 75 650 75"/><path className="flow-path saved-path" d="M120 195 C330 195 390 185 650 190"/>
+              <path className="branch-path" d="M245 195 C285 225 230 285 190 320"/><path className="branch-path" d="M265 195 C335 225 335 275 330 320"/><path className="branch-path" d="M290 195 C385 220 430 270 470 320"/><path className="branch-path" d="M315 195 C430 215 545 260 610 320"/>
+            </svg>
+            <div className="flow-output spent-output"><strong>{money.format(thisMonth)}</strong><span>Spent</span><small>{monthlyIncome ? Math.round((thisMonth / monthlyIncome) * 100) : 0}%</small></div>
+            <div className="flow-output saved-output"><strong>{monthlySavings === null ? "—" : money.format(monthlySavings)}</strong><span>{monthlySavings !== null && monthlySavings < 0 ? "Over budget" : "Saved"}</span><small>{monthlyIncome && monthlySavings ? Math.round((monthlySavings / monthlyIncome) * 100) : 0}%</small></div>
+            <div className="flow-category-row">{flowCategories.map((item) => <div className={`flow-category ${item.name.toLowerCase()}`} key={item.name}><span>{item.name.slice(0, 1)}</span><strong>{item.name}</strong><small>{money.format(item.amount)}</small><i style={{ width: `${thisMonth ? (item.amount / thisMonth) * 100 : 0}%` }} /></div>)}</div>
+          </div>
+        </section>
+
+        <aside className="upcoming-rail"><div className="upcoming-title"><h2>Upcoming</h2><span>Next entries</span></div>{futureExpenses.length ? futureExpenses.map((expense) => <div className="upcoming-item" key={expense._id}><span className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</span><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b></div>) : <div className="upcoming-empty"><span>✓</span><strong>Nothing scheduled</strong><small>Future-dated expenses appear here.</small></div>}<button className="rail-button" onClick={() => setShowQuickEntry(true)}>Schedule expense <span>›</span></button></aside>
       </section>
 
-      <section className="stats-grid">
-        <article className="stat-card stat-dark"><span className="stat-label">Total tracked</span><strong>{money.format(total)}</strong><span className="stat-note">Across {expenses.length} expenses</span></article>
-        <article className="stat-card"><span className="stat-label">This month</span><strong>{money.format(thisMonth)}</strong><span className="stat-note">{now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span></article>
-        <article className="stat-card"><span className="stat-label">Top category</span><strong>{topCategory.name}</strong><span className="stat-note">{topCategoryPercent}% of total spend</span></article>
-        <article className={`stat-card ${monthlySavings !== null && monthlySavings < 0 ? "savings-negative" : "savings-card"}`}><span className="stat-label">Monthly savings</span><strong>{monthlySavings === null ? "Set income" : money.format(monthlySavings)}</strong><button className="stat-action" onClick={() => setEditingIncome(true)}>{monthlyIncome === null ? "Tell us your monthly income" : "Update monthly income"} ↗</button></article>
+      {(monthlyIncome === null || editingIncome) && <section className="flow-income-prompt"><div><span>Monthly planning</span><h2>What is your monthly income?</h2><p>This lets Ledgerly calculate what remains after your expenses.</p></div><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{editingIncome && monthlyIncome !== null && <button type="button" className="prompt-cancel" onClick={() => setEditingIncome(false)}>Cancel</button>}{incomeStatus && <p>{incomeStatus}</p>}</form></section>}
+
+      <section className="activity-board" id="activity">
+        <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div></div>
+        <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className="activity-tile" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
+        <div className="mini-trend"><span>6-month overview</span><div>{monthlyTrend.map((item) => <div className="mini-column" key={item.key}><strong>{item.amount ? money.format(item.amount) : "—"}</strong><i style={{ height: `${Math.max((item.amount / maxMonthlyAmount) * 100, item.amount ? 8 : 2)}%` }} /><small>{item.label}</small></div>)}</div></div>
       </section>
 
-      {(monthlyIncome === null || editingIncome) && <section className="income-prompt"><div><p className="eyebrow">YOUR SAVINGS</p><h2>What is your monthly income?</h2><p>We’ll use it only to calculate your monthly savings. You can update it anytime.</p></div><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="submit-button">Save income <span>↗</span></button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section>}
-
-      <section className="charts-grid">
-        <article className="chart-card"><div className="section-heading"><div><p className="eyebrow">Breakdown</p><h2>Spending by category</h2></div><span className="chart-total">{money.format(total)}</span></div><div className="category-chart">{categoryTotals.map((item) => <div className="category-bar-row" key={item.name}><span>{item.name}</span><div className="bar-track"><div className={`bar-fill ${item.name.toLowerCase()}`} style={{ width: `${(item.amount / maxCategoryAmount) * 100}%` }} /></div><strong>{money.format(item.amount)}</strong></div>)}</div></article>
-        <article className="chart-card trend-card"><div className="section-heading"><div><p className="eyebrow">Trend</p><h2>Last six months</h2></div></div><div className="monthly-chart">{monthlyTrend.map((item) => <div className="month-column" key={item.key} title={`${item.label}: ${money.format(item.amount)}`}><span>{item.amount > 0 ? money.format(item.amount) : ""}</span><div className="month-bar" style={{ height: `${Math.max((item.amount / maxMonthlyAmount) * 100, item.amount > 0 ? 6 : 0)}%` }} /><small>{item.label}</small></div>)}</div></article>
-      </section>
-
-      <section className="content-grid">
-        <div className="expenses-panel">
-          <div className="section-heading"><div><p className="eyebrow">Your activity</p><h2>{showAll ? "All expenses" : "Recent expenses"}</h2></div>{filteredExpenses.length > 5 && <button className="text-button" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show less" : "View all"} <span>↗</span></button>}</div>
-          <div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div>
-          <div className="expense-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <div className="expense-row" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div className="expense-info"><strong>{expense.title}</strong><span>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></div><strong className="expense-amount">{money.format(expense.amount)}</strong><button className="delete-button" aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></div>) : <p className="empty-state">No expenses in this category yet.</p>}</div>
-        </div>
-        <aside className="add-panel"><p className="eyebrow">Quick entry</p><h2>Add expense</h2><form onSubmit={addExpense}><label>Description<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What did you spend on?" required /></label><div className="form-split"><label>Amount<div className="amount-input"><span>$</span><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label><label>Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label></div><label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><button className="submit-button" type="submit">Add to ledger <span>+</span></button>{status && <p className="form-status">{status}</p>}</form></aside>
-      </section>
-      <footer><span>LEDGERLY / PERSONAL FINANCE</span><span>Built for a clearer month.</span></footer>
+      {showQuickEntry && <div className="entry-backdrop" role="presentation" onMouseDown={() => setShowQuickEntry(false)}><aside className="entry-drawer" role="dialog" aria-modal="true" aria-label="Add expense" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setShowQuickEntry(false)}>×</button><span>Quick entry</span><h2>Add expense</h2><form onSubmit={addExpense}><label>Description<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What did you spend on?" required /></label><div className="form-split"><label>Amount<div className="amount-input"><span>$</span><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label><label>Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label></div><label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><button className="flow-add" type="submit">Add to ledger <b>+</b></button>{status && <p className="form-status">{status}</p>}</form></aside></div>}
     </main>
   );
 }
