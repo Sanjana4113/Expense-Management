@@ -13,18 +13,11 @@ type Expense = {
 
 const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
 
-const seedExpenses: Expense[] = [
-  { _id: "1", title: "Weekly groceries", category: "Food", amount: 84.32, date: "2026-08-26" },
-  { _id: "2", title: "Metro pass", category: "Transport", amount: 42, date: "2026-08-24" },
-  { _id: "3", title: "Desk lamp", category: "Home", amount: 38.5, date: "2026-08-21" },
-  { _id: "4", title: "Client lunch", category: "Work", amount: 64.8, date: "2026-08-18" },
-];
-
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 export default function Home() {
   const { data: session, status: sessionStatus } = useSession();
-  const [expenses, setExpenses] = useState<Expense[]>(seedExpenses);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Food");
@@ -37,7 +30,7 @@ export default function Home() {
     if (sessionStatus !== "authenticated") return;
     fetch("/api/expenses")
       .then((response) => response.json())
-      .then((data: { expenses?: Expense[] }) => data.expenses?.length && setExpenses(data.expenses))
+      .then((data: { expenses?: Expense[] }) => setExpenses(data.expenses || []))
       .catch(() => undefined);
   }, [sessionStatus]);
 

@@ -4,12 +4,7 @@ import { authOptions } from "@/auth";
 import { getDatabase } from "@/lib/mongodb";
 
 type ExpenseInput = { title: string; category: string; amount: number; date: string };
-const localExpenses: (ExpenseInput & { _id: string; ownerId: string })[] = [
-  { _id: "1", ownerId: "demo", title: "Weekly groceries", category: "Food", amount: 84.32, date: "2026-08-26" },
-  { _id: "2", ownerId: "demo", title: "Metro pass", category: "Transport", amount: 42, date: "2026-08-24" },
-  { _id: "3", ownerId: "demo", title: "Desk lamp", category: "Home", amount: 38.5, date: "2026-08-21" },
-  { _id: "4", ownerId: "demo", title: "Client lunch", category: "Work", amount: 64.8, date: "2026-08-18" },
-];
+const localExpenses: (ExpenseInput & { _id: string; ownerId: string })[] = [];
 
 export async function GET() {
   const session = await getServerSession(authOptions);
