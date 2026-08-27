@@ -76,12 +76,6 @@ export default function Home() {
   const todayKey = dateKey(now);
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const thisMonth = expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0);
-  const monthlyTrend = Array.from({ length: 6 }, (_, index) => {
-    const month = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
-    const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
-    return { key, label: month.toLocaleDateString("en-US", { month: "short" }), amount: expenses.filter((expense) => expense.date.startsWith(key)).reduce((sum, expense) => sum + expense.amount, 0) };
-  });
-  const maxMonthlyAmount = Math.max(...monthlyTrend.map((item) => item.amount), 1);
   const monthlySavings = monthlyIncome === null ? null : monthlyIncome - thisMonth;
   const monthCategoryTotals = categories
     .map((name) => ({ name, amount: expenses.filter((expense) => expense.category === name && expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0) }))
@@ -312,7 +306,6 @@ export default function Home() {
       <section className="activity-board" id="activity">
         <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div></div>
         <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className="activity-tile" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
-        <div className="mini-trend"><span>6-month overview</span><div>{monthlyTrend.map((item) => <div className="mini-column" key={item.key}><strong>{item.amount ? money.format(item.amount) : "—"}</strong><i style={{ height: `${Math.max((item.amount / maxMonthlyAmount) * 100, item.amount ? 8 : 2)}%` }} /><small>{item.label}</small></div>)}</div></div>
       </section>
 
       {editingIncome && <div className="entry-backdrop income-backdrop" role="presentation" onMouseDown={() => setEditingIncome(false)}><section className="income-modal" role="dialog" aria-modal="true" aria-labelledby="income-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setEditingIncome(false)}>×</button><span>Monthly planning</span><h2 id="income-modal-title">{monthlyIncome === null ? "Add monthly income" : "Update monthly income"}</h2><p>This lets Ledgerly calculate what remains after your monthly expenses.</p><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input autoFocus type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section></div>}
