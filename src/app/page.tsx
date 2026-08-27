@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 type Expense = {
   _id: string;
@@ -16,6 +17,7 @@ const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 export default function Home() {
+  const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [title, setTitle] = useState("");
@@ -25,6 +27,9 @@ export default function Home() {
   const [filter, setFilter] = useState("All");
   const [showAll, setShowAll] = useState(false);
   const [status, setStatus] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authError, setAuthError] = useState("");
+  const [authPending, setAuthPending] = useState(false);
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
@@ -67,8 +72,71 @@ export default function Home() {
     if (response.ok) setExpenses((current) => current.filter((expense) => expense._id !== id));
   }
 
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthPending(true);
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") || "");
+
+    try {
+      if (authMode === "signup") {
+        const response = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: form.get("username"),
+            email: form.get("email"),
+            password,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          setAuthError(data.error || "Could not create your account.");
+          return;
+        }
+      }
+
+      const identifier = authMode === "signup" ? String(form.get("email") || "") : String(form.get("identifier") || "");
+      const result = await signIn("credentials", { identifier, password, redirect: false });
+      if (result?.error) {
+        setAuthError("The email, username, or password is incorrect.");
+        return;
+      }
+      router.replace("/");
+      router.refresh();
+    } catch {
+      setAuthError("Something went wrong. Please try again.");
+    } finally {
+      setAuthPending(false);
+    }
+  }
+
   if (sessionStatus === "loading") return <main className="auth-shell"><p className="eyebrow">LEDGERLY</p><p className="auth-loading">Loading your ledger...</p></main>;
-  if (!session) return <main className="auth-shell"><div className="auth-brand"><span className="brand-mark">+</span><span>ledgerly</span></div><div className="auth-card"><p className="eyebrow">PERSONAL FINANCE</p><h1>Know where<br /><em>it goes.</em></h1><p className="auth-copy">Sign in to keep your expenses private and available wherever you are.</p><button className="google-button" onClick={() => signIn("google", { callbackUrl: "/" })}><span className="google-g">G</span>Continue with Google <span>↗</span></button><p className="auth-legal">By continuing, you agree to use Ledgerly for personal budgeting.</p></div></main>;
+  if (!session) return (
+    <main className="auth-shell">
+      <div className="auth-brand"><span className="brand-mark">+</span><span>ledgerly</span></div>
+      <div className="auth-card">
+        <p className="eyebrow">PERSONAL FINANCE</p>
+        <h1>Know where<br /><em>it goes.</em></h1>
+        <p className="auth-copy">{authMode === "login" ? "Sign in to keep your expenses private and available wherever you are." : "Create an account and start building a clearer view of your spending."}</p>
+        <div className="auth-tabs" role="tablist" aria-label="Account access">
+          <button className={authMode === "login" ? "auth-tab active" : "auth-tab"} type="button" onClick={() => { setAuthMode("login"); setAuthError(""); }}>Log in</button>
+          <button className={authMode === "signup" ? "auth-tab active" : "auth-tab"} type="button" onClick={() => { setAuthMode("signup"); setAuthError(""); }}>Sign up</button>
+        </div>
+        <form className="auth-form" onSubmit={submitAuth}>
+          {authMode === "signup" && <label>Username<input name="username" autoComplete="username" minLength={3} maxLength={24} pattern="[A-Za-z0-9_]+" placeholder="your_username" required /></label>}
+          {authMode === "login" ? <label>Email or username<input name="identifier" autoComplete="username" placeholder="you@example.com" required /></label> : <label>Email<input name="email" type="email" autoComplete="email" placeholder="you@example.com" required /></label>}
+          <label>Password<input name="password" type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={8} placeholder="At least 8 characters" required /></label>
+          {authError && <p className="auth-error" role="alert">{authError}</p>}
+          <button className="auth-submit" type="submit" disabled={authPending}>{authPending ? "Please wait…" : authMode === "login" ? "Log in" : "Create account"}<span>↗</span></button>
+        </form>
+        <div className="auth-divider"><span>or</span></div>
+        <button className="google-button" type="button" onClick={() => signIn("google", { callbackUrl: "/" })}><span className="google-g">G</span>Continue with Google <span>↗</span></button>
+        <p className="auth-legal">By continuing, you agree to use Ledgerly for personal budgeting.</p>
+      </div>
+    </main>
+  );
 
   return (
     <main className="dashboard-shell">
