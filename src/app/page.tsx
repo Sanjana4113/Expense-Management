@@ -32,6 +32,10 @@ export default function Home() {
   const [authPending, setAuthPending] = useState(false);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [adminChoiceDismissed, setAdminChoiceDismissed] = useState(false);
+  const [monthlyIncome, setMonthlyIncome] = useState<number | null>(null);
+  const [incomeInput, setIncomeInput] = useState("");
+  const [incomeStatus, setIncomeStatus] = useState("");
+  const [editingIncome, setEditingIncome] = useState(false);
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
@@ -43,6 +47,15 @@ export default function Home() {
       .then((response) => response.json())
       .then((data: { isAdmin?: boolean }) => setHasAdminAccess(Boolean(data.isAdmin)))
       .catch(() => undefined);
+    fetch("/api/settings")
+      .then((response) => response.json())
+      .then((data: { monthlyIncome?: number | null }) => {
+        if (typeof data.monthlyIncome === "number") {
+          setMonthlyIncome(data.monthlyIncome);
+          setIncomeInput(String(data.monthlyIncome));
+        }
+      })
+      .catch(() => undefined);
   }, [sessionStatus]);
 
   const filteredExpenses = useMemo(
@@ -51,7 +64,33 @@ export default function Home() {
   );
   const visibleExpenses = showAll ? filteredExpenses : filteredExpenses.slice(0, 5);
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const thisMonth = expenses.filter((expense) => expense.date.startsWith("2026-08")).reduce((sum, expense) => sum + expense.amount, 0);
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonth = expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0);
+  const categoryTotals = categories.map((name) => ({ name, amount: expenses.filter((expense) => expense.category === name).reduce((sum, expense) => sum + expense.amount, 0) }));
+  const topCategory = categoryTotals.reduce((top, item) => item.amount > top.amount ? item : top, { name: "—", amount: 0 });
+  const topCategoryPercent = total > 0 ? Math.round((topCategory.amount / total) * 100) : 0;
+  const maxCategoryAmount = Math.max(...categoryTotals.map((item) => item.amount), 1);
+  const monthlyTrend = Array.from({ length: 6 }, (_, index) => {
+    const month = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+    const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
+    return { key, label: month.toLocaleDateString("en-US", { month: "short" }), amount: expenses.filter((expense) => expense.date.startsWith(key)).reduce((sum, expense) => sum + expense.amount, 0) };
+  });
+  const maxMonthlyAmount = Math.max(...monthlyTrend.map((item) => item.amount), 1);
+  const monthlySavings = monthlyIncome === null ? null : monthlyIncome - thisMonth;
+
+  async function saveIncome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = Number(incomeInput);
+    if (!Number.isFinite(value) || value < 0) return setIncomeStatus("Enter a valid income.");
+    const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ monthlyIncome: value }) });
+    const data = await response.json();
+    if (!response.ok) return setIncomeStatus(data.error || "Could not save income.");
+    setMonthlyIncome(data.monthlyIncome);
+    setEditingIncome(false);
+    setIncomeStatus("Income updated");
+    setTimeout(() => setIncomeStatus(""), 2000);
+  }
 
   async function addExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -154,14 +193,22 @@ export default function Home() {
       {hasAdminAccess && !adminChoiceDismissed && <section className="admin-choice"><div><p className="eyebrow">ADMIN ACCESS</p><strong>Choose where you want to work.</strong></div><div><button className="choice-secondary" type="button" onClick={() => setAdminChoiceDismissed(true)}>Continue normal flow</button><button className="choice-primary" type="button" onClick={() => router.push("/admin")}>Open admin portal <span>↗</span></button></div></section>}
 
       <section className="intro-row">
-        <div><p className="eyebrow">Thursday, August 27, 2026</p><h1>Know where<br /><em>it goes.</em></h1></div>
+        <div><p className="eyebrow">{now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p><h1>Know where<br /><em>it goes.</em></h1></div>
         <p className="intro-copy">A clear view of your spending,<br />so your money can do more.</p>
       </section>
 
       <section className="stats-grid">
         <article className="stat-card stat-dark"><span className="stat-label">Total tracked</span><strong>{money.format(total)}</strong><span className="stat-note">Across {expenses.length} expenses</span></article>
-        <article className="stat-card"><span className="stat-label">This month</span><strong>{money.format(thisMonth)}</strong><span className="stat-note positive">↓ 12.4% vs. last month</span></article>
-        <article className="stat-card"><span className="stat-label">Top category</span><strong>{expenses.length ? "Food" : "—"}</strong><span className="stat-note">32% of total spend</span></article>
+        <article className="stat-card"><span className="stat-label">This month</span><strong>{money.format(thisMonth)}</strong><span className="stat-note">{now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span></article>
+        <article className="stat-card"><span className="stat-label">Top category</span><strong>{topCategory.name}</strong><span className="stat-note">{topCategoryPercent}% of total spend</span></article>
+        <article className={`stat-card ${monthlySavings !== null && monthlySavings < 0 ? "savings-negative" : "savings-card"}`}><span className="stat-label">Monthly savings</span><strong>{monthlySavings === null ? "Set income" : money.format(monthlySavings)}</strong><button className="stat-action" onClick={() => setEditingIncome(true)}>{monthlyIncome === null ? "Tell us your monthly income" : "Update monthly income"} ↗</button></article>
+      </section>
+
+      {(monthlyIncome === null || editingIncome) && <section className="income-prompt"><div><p className="eyebrow">YOUR SAVINGS</p><h2>What is your monthly income?</h2><p>We’ll use it only to calculate your monthly savings. You can update it anytime.</p></div><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="submit-button">Save income <span>↗</span></button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section>}
+
+      <section className="charts-grid">
+        <article className="chart-card"><div className="section-heading"><div><p className="eyebrow">Breakdown</p><h2>Spending by category</h2></div><span className="chart-total">{money.format(total)}</span></div><div className="category-chart">{categoryTotals.map((item) => <div className="category-bar-row" key={item.name}><span>{item.name}</span><div className="bar-track"><div className={`bar-fill ${item.name.toLowerCase()}`} style={{ width: `${(item.amount / maxCategoryAmount) * 100}%` }} /></div><strong>{money.format(item.amount)}</strong></div>)}</div></article>
+        <article className="chart-card trend-card"><div className="section-heading"><div><p className="eyebrow">Trend</p><h2>Last six months</h2></div></div><div className="monthly-chart">{monthlyTrend.map((item) => <div className="month-column" key={item.key} title={`${item.label}: ${money.format(item.amount)}`}><span>{item.amount > 0 ? money.format(item.amount) : ""}</span><div className="month-bar" style={{ height: `${Math.max((item.amount / maxMonthlyAmount) * 100, item.amount > 0 ? 6 : 0)}%` }} /><small>{item.label}</small></div>)}</div></article>
       </section>
 
       <section className="content-grid">
