@@ -7,8 +7,8 @@ if (!uri) {
   console.warn("MONGODB_URI is not set; the app will use its local development fallback.");
 }
 
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
+let client: MongoClient | undefined;
+export let clientPromise: Promise<MongoClient> | undefined;
 
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;

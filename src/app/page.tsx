@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 type Expense = {
   _id: string;
@@ -22,6 +23,7 @@ const seedExpenses: Expense[] = [
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 export default function Home() {
+  const { data: session, status: sessionStatus } = useSession();
   const [expenses, setExpenses] = useState<Expense[]>(seedExpenses);
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
@@ -32,11 +34,12 @@ export default function Home() {
   const [status, setStatus] = useState("");
 
   useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
     fetch("/api/expenses")
       .then((response) => response.json())
       .then((data: { expenses?: Expense[] }) => data.expenses?.length && setExpenses(data.expenses))
       .catch(() => undefined);
-  }, []);
+  }, [sessionStatus]);
 
   const filteredExpenses = useMemo(
     () => filter === "All" ? expenses : expenses.filter((expense) => expense.category === filter),
@@ -71,11 +74,14 @@ export default function Home() {
     if (response.ok) setExpenses((current) => current.filter((expense) => expense._id !== id));
   }
 
+  if (sessionStatus === "loading") return <main className="auth-shell"><p className="eyebrow">LEDGERLY</p><p className="auth-loading">Loading your ledger...</p></main>;
+  if (!session) return <main className="auth-shell"><div className="auth-brand"><span className="brand-mark">+</span><span>ledgerly</span></div><div className="auth-card"><p className="eyebrow">PERSONAL FINANCE</p><h1>Know where<br /><em>it goes.</em></h1><p className="auth-copy">Sign in to keep your expenses private and available wherever you are.</p><button className="google-button" onClick={() => signIn("google", { callbackUrl: "/" })}><span className="google-g">G</span>Continue with Google <span>↗</span></button><p className="auth-legal">By continuing, you agree to use Ledgerly for personal budgeting.</p></div></main>;
+
   return (
     <main className="dashboard-shell">
       <nav className="topbar">
         <div className="brand"><span className="brand-mark">+</span><span>ledgerly</span></div>
-        <div className="nav-meta"><span className="live-dot" /> Cloud synced <span className="avatar">AM</span></div>
+        <div className="nav-meta"><span className="live-dot" /> Cloud synced <span className="avatar">{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</span><button className="signout-button" onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button></div>
       </nav>
 
       <section className="intro-row">

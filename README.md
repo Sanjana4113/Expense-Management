@@ -12,6 +12,8 @@ npm run dev
 
 The app works without environment variables using a local development fallback. For persistent data, replace the values in `.env.local` with a MongoDB Atlas connection string and database name.
 
+For Google sign-in, also add `AUTH_SECRET`, `AUTH_GOOGLE_ID`, and `AUTH_GOOGLE_SECRET`. In Google Cloud Console, create a Web OAuth client and add `http://localhost:3000/api/auth/callback/google` as a local redirect URI. For Vercel, add `https://YOUR-VERCEL-DOMAIN/api/auth/callback/google` as an authorized redirect URI.
+
 ## Deploy to Vercel
 
 1. Push this repository to GitHub and import it at [vercel.com/new](https://vercel.com/new).
