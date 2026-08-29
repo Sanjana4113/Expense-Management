@@ -25,14 +25,14 @@ Create a TrueLayer application, register `http://localhost:3000/api/banking/call
 ```env
 TRUELAYER_CLIENT_ID=your-client-id
 TRUELAYER_CLIENT_SECRET=your-client-secret
-TRUELAYER_REDIRECT_URI=http://localhost:3000/api/banking/callback
+TRUELAYER_REDIRECT_URI=https://your-public-test-domain.example/api/banking/callback
 TRUELAYER_ENVIRONMENT=sandbox
-TRUELAYER_PROVIDERS=mock
+TRUELAYER_PROVIDERS=uk-cs-mock
 # Optional: use a separate high-entropy secret instead of AUTH_SECRET for token encryption.
 BANK_TOKEN_ENCRYPTION_KEY=replace-with-a-long-random-secret
 ```
 
-Use `TRUELAYER_ENVIRONMENT=production` and the provider groups enabled for your TrueLayer application when going live. MongoDB is required for connected accounts. Transactions synchronize when the user opens the dashboard and whenever they select **Sync now**.
+TrueLayer currently requires an HTTPS redirect URI, so use your deployed preview URL or an HTTPS development tunnel when testing locally. Use `TRUELAYER_ENVIRONMENT=production` and the provider groups enabled for your TrueLayer application when going live. MongoDB is required for connected accounts. Transactions synchronize when the user opens the dashboard and whenever they select **Sync now**.
 
 ## Admin portal
 

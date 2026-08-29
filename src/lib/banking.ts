@@ -101,7 +101,7 @@ export function buildAuthorizationUrl(redirectUri: string, state: string) {
   url.searchParams.set("client_id", process.env.TRUELAYER_CLIENT_ID || "");
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("scope", "info accounts cards transactions offline_access");
-  const providers = process.env.TRUELAYER_PROVIDERS || (isSandbox ? "mock" : "");
+  const providers = process.env.TRUELAYER_PROVIDERS || (isSandbox ? "uk-cs-mock" : "");
   if (providers) url.searchParams.set("providers", providers);
   url.searchParams.set("state", state);
   return url.toString();
