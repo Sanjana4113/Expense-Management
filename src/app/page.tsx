@@ -56,6 +56,7 @@ export default function Home() {
   const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
   const [bankStatus, setBankStatus] = useState("");
   const [bankSyncing, setBankSyncing] = useState(false);
+  const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (sessionStatus !== "authenticated") return;
@@ -214,6 +215,44 @@ export default function Home() {
     if (response.ok) setExpenses((current) => current.filter((expense) => expense._id !== id));
   }
 
+  function toggleExpenseSelection(id: string) {
+    setSelectedExpenses((current) => {
+      const updated = new Set(current);
+      if (updated.has(id)) {
+        updated.delete(id);
+      } else {
+        updated.add(id);
+      }
+      return updated;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedExpenses.size === visibleExpenses.length) {
+      setSelectedExpenses(new Set());
+    } else {
+      setSelectedExpenses(new Set(visibleExpenses.map((expense) => expense._id)));
+    }
+  }
+
+  async function deleteSelectedExpenses() {
+    if (selectedExpenses.size === 0) return;
+    if (!window.confirm(`Delete ${selectedExpenses.size} expense${selectedExpenses.size === 1 ? "" : "s"}?`)) return;
+    
+    let successCount = 0;
+    for (const id of selectedExpenses) {
+      const response = await fetch(`/api/expenses?id=${id}`, { method: "DELETE" });
+      if (response.ok) successCount += 1;
+    }
+    
+    if (successCount > 0) {
+      setExpenses((current) => current.filter((expense) => !selectedExpenses.has(expense._id)));
+      setSelectedExpenses(new Set());
+      setStatus(`${successCount} expense${successCount === 1 ? "" : "s"} deleted`);
+      setTimeout(() => setStatus(""), 2000);
+    }
+  }
+
   async function syncBank() {
     setBankSyncing(true);
     setBankStatus("");
@@ -369,8 +408,8 @@ export default function Home() {
       </section>
 
       <section className="activity-board" id="activity">
-        <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div></div>
-        <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className="activity-tile" key={expense._id}><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}{expense.source === "bank" && <span className="bank-source">Synced</span>}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
+        <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div>{visibleExpenses.length > 0 && <div className="bulk-actions"><label className="select-all-checkbox"><input type="checkbox" checked={selectedExpenses.size === visibleExpenses.length && visibleExpenses.length > 0} onChange={toggleSelectAll} /><span>Select all</span></label>{selectedExpenses.size > 0 && <button className="delete-selected" onClick={deleteSelectedExpenses}>Delete {selectedExpenses.size}</button>}</div>}</div>
+        <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className={`activity-tile ${selectedExpenses.has(expense._id) ? "selected" : ""}`} key={expense._id}><input type="checkbox" className="expense-checkbox" checked={selectedExpenses.has(expense._id)} onChange={() => toggleExpenseSelection(expense._id)} /><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}{expense.source === "bank" && <span className="bank-source">Synced</span>}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
       </section>
 
       {editingIncome && <div className="entry-backdrop income-backdrop" role="presentation" onMouseDown={() => setEditingIncome(false)}><section className="income-modal" role="dialog" aria-modal="true" aria-labelledby="income-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setEditingIncome(false)}>×</button><span>Monthly planning</span><h2 id="income-modal-title">{monthlyIncome === null ? "Add monthly income" : "Update monthly income"}</h2><p>This lets Ledgerly calculate what remains after your monthly expenses.</p><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input autoFocus type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section></div>}
