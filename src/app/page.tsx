@@ -239,17 +239,21 @@ export default function Home() {
     if (selectedExpenses.size === 0) return;
     if (!window.confirm(`Delete ${selectedExpenses.size} expense${selectedExpenses.size === 1 ? "" : "s"}?`)) return;
     
-    let successCount = 0;
-    for (const id of selectedExpenses) {
-      const response = await fetch(`/api/expenses?id=${id}`, { method: "DELETE" });
-      if (response.ok) successCount += 1;
-    }
+    const ids = Array.from(selectedExpenses);
+    const response = await fetch("/api/expenses", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await response.json();
     
-    if (successCount > 0) {
+    if (response.ok && data.deleted > 0) {
       setExpenses((current) => current.filter((expense) => !selectedExpenses.has(expense._id)));
       setSelectedExpenses(new Set());
-      setStatus(`${successCount} expense${successCount === 1 ? "" : "s"} deleted`);
+      setStatus(`${data.deleted} expense${data.deleted === 1 ? "" : "s"} deleted`);
       setTimeout(() => setStatus(""), 2000);
+    } else {
+      setStatus(data.error || "Could not delete expenses");
     }
   }
 

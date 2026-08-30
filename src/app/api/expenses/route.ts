@@ -48,20 +48,54 @@ export async function DELETE(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   const ownerId = session.user.id;
-  const id = new URL(request.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  
+  // Check for bulk delete (JSON body with ids array)
+  let ids: string[] = [];
+  try {
+    const contentType = request.headers.get("content-type");
+    if (contentType?.includes("application/json")) {
+      const body = (await request.json()) as { ids?: string[] };
+      ids = body.ids || [];
+    }
+  } catch {
+    // Not JSON, continue with query param
+  }
+
+  // Fall back to query parameter for single delete
+  if (ids.length === 0) {
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Missing id or ids" }, { status: 400 });
+    ids = [id];
+  }
+
   try {
     const database = await getDatabase();
     if (!database) {
-      const index = localExpenses.findIndex((expense) => expense._id === id && expense.ownerId === ownerId);
-      if (index >= 0) localExpenses.splice(index, 1);
-      return NextResponse.json({ ok: true });
+      // Local fallback
+      for (const id of ids) {
+        const index = localExpenses.findIndex((expense) => expense._id === id && expense.ownerId === ownerId);
+        if (index >= 0) localExpenses.splice(index, 1);
+      }
+      return NextResponse.json({ deleted: ids.length });
     }
+
     const { ObjectId } = await import("mongodb");
-    await database.collection("expenses").deleteOne({ _id: new ObjectId(id), ownerId });
-    return NextResponse.json({ ok: true });
+    const objectIds = ids
+      .map((id) => {
+        try {
+          return new ObjectId(id);
+        } catch {
+          return null;
+        }
+      })
+      .filter((id) => id !== null);
+
+    if (objectIds.length === 0) return NextResponse.json({ deleted: 0 });
+
+    const result = await database.collection("expenses").deleteMany({ _id: { $in: objectIds }, ownerId });
+    return NextResponse.json({ deleted: result.deletedCount });
   } catch (error) {
-    console.error("Failed to delete expense", error);
-    return NextResponse.json({ error: "Could not delete expense." }, { status: 503 });
+    console.error("Failed to delete expenses", error);
+    return NextResponse.json({ error: "Could not delete expenses." }, { status: 503 });
   }
 }
