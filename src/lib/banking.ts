@@ -51,12 +51,12 @@ const authBase = isSandbox ? "https://auth.truelayer-sandbox.com" : "https://aut
 const apiBase = isSandbox ? "https://api.truelayer-sandbox.com" : "https://api.truelayer.com";
 
 export function bankIntegrationConfigured() {
-  return Boolean(process.env.TRUELAYER_CLIENT_ID && process.env.TRUELAYER_CLIENT_SECRET && process.env.AUTH_SECRET);
+  return Boolean(process.env.TRUELAYER_CLIENT_ID && process.env.TRUELAYER_CLIENT_SECRET && (process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET));
 }
 
 function secretKey() {
-  const secret = process.env.BANK_TOKEN_ENCRYPTION_KEY || process.env.AUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET or BANK_TOKEN_ENCRYPTION_KEY is required");
+  const secret = process.env.BANK_TOKEN_ENCRYPTION_KEY || process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error("BANK_TOKEN_ENCRYPTION_KEY, AUTH_SECRET or NEXTAUTH_SECRET is required");
   return createHash("sha256").update(secret).digest();
 }
 
