@@ -25,6 +25,7 @@ type BankConnection = {
 type BankingInstitution = { name: string; country: string; logo?: string };
 
 const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
+const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -114,6 +115,12 @@ export default function Home() {
   const todayKey = dateKey(now);
   const selectedMonthDate = new Date(`${selectedMonth}-01T12:00:00`);
   const selectedMonthLabel = selectedMonthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const currentYear = now.getFullYear();
+  const availableYears = Array.from(new Set([
+    ...Array.from({ length: 11 }, (_, index) => currentYear - index),
+    currentYear + 1,
+    ...expenses.map((expense) => Number(expense.date.slice(0, 4))).filter(Number.isFinite),
+  ])).sort((a, b) => b - a);
   const thisMonth = selectedMonthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const monthlySavings = monthlyIncome === null ? null : monthlyIncome - thisMonth;
   const monthCategoryTotals = categories
@@ -394,7 +401,7 @@ export default function Home() {
       <nav className="flow-nav">
         <div className="flow-logo">ledgerly<span /></div>
         <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => document.getElementById("connected-accounts")?.scrollIntoView({ behavior: "smooth" })}>Accounts</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
-        <div className="flow-actions"><label className="flow-month" aria-label="Select dashboard month"><input type="month" value={selectedMonth} onChange={(event) => { setSelectedMonth(event.target.value); setShowAll(false); setSelectedExpenses(new Set()); }} /></label><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
+        <div className="flow-actions"><div className="flow-month" aria-label="Select dashboard month"><select aria-label="Month" value={selectedMonth.slice(5, 7)} onChange={(event) => { setSelectedMonth(`${selectedMonth.slice(0, 4)}-${event.target.value}`); setShowAll(false); setSelectedExpenses(new Set()); }}>{monthNames.map((name, index) => <option key={name} value={String(index + 1).padStart(2, "0")}>{name}</option>)}</select><select aria-label="Year" value={selectedMonth.slice(0, 4)} onChange={(event) => { setSelectedMonth(`${event.target.value}-${selectedMonth.slice(5, 7)}`); setShowAll(false); setSelectedExpenses(new Set()); }}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></div><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
       </nav>
 
       {hasAdminAccess && !adminChoiceDismissed && <section className="flow-admin-choice"><span>You have administrator access.</span><button onClick={() => setAdminChoiceDismissed(true)}>Stay here</button><button onClick={() => router.push("/admin")}>Open admin portal ↗</button></section>}
