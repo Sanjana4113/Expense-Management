@@ -89,13 +89,9 @@ export default function Home() {
       .catch(() => undefined);
     fetch("/api/banking/connections")
       .then((response) => response.json())
-      .then(async (data: { configured?: boolean; connections?: BankConnection[] }) => {
+      .then((data: { configured?: boolean; connections?: BankConnection[] }) => {
         setBankConfigured(Boolean(data.configured));
         setBankConnections(data.connections || []);
-        if (data.connections?.some((connection) => connection.status === "active")) {
-          const response = await fetch("/api/banking/sync", { method: "POST" });
-          if (response.ok) await loadExpenses();
-        }
       })
       .catch(() => undefined);
     const bankResult = new URLSearchParams(window.location.search).get("bank");
@@ -275,11 +271,15 @@ export default function Home() {
     const data = await response.json();
     if (!response.ok) setBankStatus(data.error || "Could not sync your bank account.");
     else {
-      setBankStatus(data.imported ? `${data.imported} new purchase${data.imported === 1 ? "" : "s"} imported.` : "Everything is up to date.");
+      const failureMessage = Array.isArray(data.failures) && data.failures.length
+        ? ` ${data.failures.map((failure: { bankName: string; reason: string }) => `${failure.bankName}: ${failure.reason}`).join(" ")}`
+        : "";
+      setBankStatus(`${data.imported ? `${data.imported} new purchase${data.imported === 1 ? "" : "s"} imported.` : "Everything available is up to date."}${failureMessage}`);
       const expensesResponse = await fetch("/api/expenses");
       const expensesData = await expensesResponse.json();
       setExpenses(expensesData.expenses || []);
-      setBankConnections((current) => current.map((connection) => ({ ...connection, lastSyncedAt: data.syncedAt })));
+      const syncedBanks = new Set<string>((data.synced || []).filter((item: { skipped?: boolean }) => !item.skipped).map((item: { bankName: string }) => item.bankName));
+      setBankConnections((current) => current.map((connection) => syncedBanks.has(connection.bankName) ? { ...connection, lastSyncedAt: data.syncedAt } : connection));
     }
     setBankSyncing(false);
   }
