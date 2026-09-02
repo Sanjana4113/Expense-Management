@@ -54,7 +54,7 @@ export default function Home() {
   const [editingIncome, setEditingIncome] = useState(false);
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [entryMode, setEntryMode] = useState<"add" | "schedule">("add");
-  const [activityYear, setActivityYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(() => dateKey(new Date()).slice(0, 7));
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [bankConfigured, setBankConfigured] = useState(false);
   const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
@@ -105,23 +105,29 @@ export default function Home() {
     }
   }, [sessionStatus]);
 
+  const selectedMonthExpenses = useMemo(
+    () => expenses.filter((expense) => expense.date.startsWith(selectedMonth)),
+    [expenses, selectedMonth],
+  );
   const filteredExpenses = useMemo(
-    () => filter === "All" ? expenses : expenses.filter((expense) => expense.category === filter),
-    [expenses, filter],
+    () => filter === "All" ? selectedMonthExpenses : selectedMonthExpenses.filter((expense) => expense.category === filter),
+    [selectedMonthExpenses, filter],
   );
   const visibleExpenses = showAll ? filteredExpenses : filteredExpenses.slice(0, 5);
   const now = new Date();
-  const currentYear = now.getFullYear();
   const todayKey = dateKey(now);
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const thisMonth = expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0);
+  const selectedMonthDate = new Date(`${selectedMonth}-01T12:00:00`);
+  const selectedMonthLabel = selectedMonthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const thisMonth = selectedMonthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const monthlySavings = monthlyIncome === null ? null : monthlyIncome - thisMonth;
   const monthCategoryTotals = categories
-    .map((name) => ({ name, amount: expenses.filter((expense) => expense.category === name && expense.date.startsWith(currentMonthKey)).reduce((sum, expense) => sum + expense.amount, 0) }))
+    .map((name) => ({ name, amount: selectedMonthExpenses.filter((expense) => expense.category === name).reduce((sum, expense) => sum + expense.amount, 0) }))
     .sort((a, b) => b.amount - a.amount);
   const flowCategories = monthCategoryTotals.slice(0, 4);
-  const futureExpenses = expenses.filter((expense) => new Date(`${expense.date}T23:59:59`) > now).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
-  const monthProgress = Math.round((now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) * 100);
+  const futureExpenses = selectedMonthExpenses.filter((expense) => new Date(`${expense.date}T23:59:59`) > now).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+  const currentMonthKey = todayKey.slice(0, 7);
+  const monthProgress = selectedMonth < currentMonthKey ? 100 : selectedMonth > currentMonthKey ? 0 : Math.round((now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) * 100);
+  const monthTiming = selectedMonth < currentMonthKey ? "Completed month" : selectedMonth > currentMonthKey ? "Future month" : `${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate()} days left`;
   const incomeForFlow = monthlyIncome || 0;
   const spentPercent = incomeForFlow > 0 ? Math.min((thisMonth / incomeForFlow) * 100, 100) : thisMonth > 0 ? 100 : 0;
   const remainingPercent = Math.max(100 - spentPercent, 0);
@@ -129,10 +135,9 @@ export default function Home() {
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowKey = dateKey(tomorrow);
-  const activityYears = Array.from(new Set([currentYear, ...expenses.map((expense) => Number(expense.date.slice(0, 4))).filter(Number.isFinite)])).sort((a, b) => b - a);
   const calendarData = (() => {
     const daily = new Map<string, { amount: number; count: number }>();
-    expenses.filter((expense) => expense.date.startsWith(`${activityYear}-`)).forEach((expense) => {
+    selectedMonthExpenses.forEach((expense) => {
       const current = daily.get(expense.date) || { amount: 0, count: 0 };
       daily.set(expense.date, { amount: current.amount + expense.amount, count: current.count + 1 });
     });
@@ -140,8 +145,8 @@ export default function Home() {
     const amounts = [...daily.values()].map((day) => day.amount).sort((a, b) => a - b);
     const quartile = (position: number) => amounts[Math.floor((amounts.length - 1) * position)] || 0;
     const thresholds = [quartile(.25), quartile(.5), quartile(.75)];
-    const firstDay = new Date(activityYear, 0, 1);
-    const lastDay = new Date(activityYear, 11, 31);
+    const firstDay = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth(), 1);
+    const lastDay = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0);
     const cells: ({ key: string; date: Date; amount: number; count: number; level: number } | null)[] = Array(firstDay.getDay()).fill(null);
     for (const day = new Date(firstDay); day <= lastDay; day.setDate(day.getDate() + 1)) {
       const key = dateKey(day);
@@ -151,16 +156,12 @@ export default function Home() {
     }
     while (cells.length % 7) cells.push(null);
 
-    const months = Array.from({ length: 12 }, (_, month) => {
-      const day = new Date(activityYear, month, 1);
-      const dayOfYear = Math.floor((day.getTime() - firstDay.getTime()) / 86_400_000);
-      return { label: day.toLocaleDateString("en-US", { month: "short" }), week: Math.floor((firstDay.getDay() + dayOfYear) / 7) + 1 };
-    });
+    const months = [{ label: selectedMonthDate.toLocaleDateString("en-US", { month: "short" }), week: 1 }];
     const weekdayCounts = Array(7).fill(0) as number[];
     daily.forEach((value, key) => { weekdayCounts[new Date(`${key}T12:00:00`).getDay()] += value.count; });
     const mostActiveIndex = weekdayCounts.indexOf(Math.max(...weekdayCounts));
     const highest = [...daily.values()].reduce((maximum, day) => Math.max(maximum, day.amount), 0);
-    const streakEnd = activityYear === currentYear ? new Date(`${todayKey}T12:00:00`) : lastDay;
+    const streakEnd = selectedMonth === currentMonthKey ? new Date(`${todayKey}T12:00:00`) : lastDay;
     let streak = 0;
     for (const day = new Date(streakEnd); daily.has(dateKey(day)); day.setDate(day.getDate() - 1)) streak += 1;
 
@@ -393,14 +394,14 @@ export default function Home() {
       <nav className="flow-nav">
         <div className="flow-logo">ledgerly<span /></div>
         <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => document.getElementById("connected-accounts")?.scrollIntoView({ behavior: "smooth" })}>Accounts</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
-        <div className="flow-actions"><span className="flow-month">▣ {now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
+        <div className="flow-actions"><label className="flow-month" aria-label="Select dashboard month"><span>▣</span><input type="month" value={selectedMonth} onChange={(event) => { setSelectedMonth(event.target.value); setShowAll(false); setSelectedExpenses(new Set()); }} /></label><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
       </nav>
 
       {hasAdminAccess && !adminChoiceDismissed && <section className="flow-admin-choice"><span>You have administrator access.</span><button onClick={() => setAdminChoiceDismissed(true)}>Stay here</button><button onClick={() => router.push("/admin")}>Open admin portal ↗</button></section>}
 
       <section className="flow-dashboard">
         <aside className="month-rail">
-          <div><span>{now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span><small>{new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate()} days left</small></div>
+          <div><span>{selectedMonthLabel}</span><small>{monthTiming}</small></div>
           <div className="progress-ring" style={{ "--progress": `${monthProgress * 3.6}deg` } as React.CSSProperties}><strong>{monthProgress}%</strong><span>of month</span></div>
           <div className="rail-metric"><span>Income</span><strong>{monthlyIncome === null ? "Not set" : money.format(monthlyIncome)}</strong><i style={{ width: monthlyIncome === null ? "0%" : "100%" }} /></div>
           <div className="rail-metric spent"><span>Spent</span><strong>{money.format(thisMonth)}</strong><i style={{ width: `${monthlyIncome ? Math.min((thisMonth / monthlyIncome) * 100, 100) : 0}%` }} /></div>
@@ -409,7 +410,7 @@ export default function Home() {
         </aside>
 
         <section className="money-flow-card">
-          <div className="flow-card-title"><div><h1>Money flow</h1><p>See exactly where this month&apos;s income is going.</p></div><span className="flow-period">{now.toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span></div>
+          <div className="flow-card-title"><div><h1>Money flow</h1><p>See exactly where this month&apos;s income is going.</p></div><span className="flow-period">{selectedMonthDate.toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span></div>
           <div className="balance-overview">
             <div className="balance-source"><span>Monthly income</span><strong>{monthlyIncome === null ? "Not set" : money.format(monthlyIncome)}</strong><button onClick={() => setEditingIncome(true)}>{monthlyIncome === null ? "Add income" : "Edit"}</button></div>
             <div className="balance-journey">
@@ -420,7 +421,7 @@ export default function Home() {
             </div>
             <div className="balance-results"><div className="result-spent"><span>Spent</span><strong>{money.format(thisMonth)}</strong></div><div className={isOverBudget ? "result-saved negative" : "result-saved"}><span>{isOverBudget ? "Over budget" : "Remaining"}</span><strong>{monthlySavings === null ? "—" : money.format(Math.abs(monthlySavings))}</strong></div></div>
           </div>
-          <div className="category-flow-heading"><div><span>Expense breakdown</span><strong>{flowCategories[0]?.amount ? `${flowCategories[0].name} is highest` : "No spending yet"}</strong></div><span>{expenses.filter((expense) => expense.date.startsWith(currentMonthKey)).length} transactions</span></div>
+          <div className="category-flow-heading"><div><span>Expense breakdown</span><strong>{flowCategories[0]?.amount ? `${flowCategories[0].name} is highest` : "No spending yet"}</strong></div><span>{selectedMonthExpenses.length} transactions</span></div>
           <div className="flow-category-grid">{flowCategories.map((item, index) => <article className={`flow-category-card ${item.name.toLowerCase()}`} key={item.name}><div><span>{String(index + 1).padStart(2, "0")}</span><i>{item.name.slice(0, 1)}</i></div><strong>{item.name}</strong><b>{money.format(item.amount)}</b><div className="category-meter"><i style={{ width: `${thisMonth ? (item.amount / thisMonth) * 100 : 0}%` }} /></div><small>{thisMonth ? Math.round((item.amount / thisMonth) * 100) : 0}% of monthly spend</small></article>)}</div>
         </section>
 
@@ -441,7 +442,7 @@ export default function Home() {
       </section>
 
       <section className="expense-activity-panel">
-        <header className="heatmap-header"><div><h2>Expense activity</h2><p>Your spending, day by day</p></div><div><select aria-label="Activity year" value={activityYear} onChange={(event) => setActivityYear(Number(event.target.value))}>{activityYears.map((year) => <option key={year}>{year}</option>)}</select><span>{calendarData.activeDays} active days · {money.format(calendarData.total)} tracked</span></div></header>
+        <header className="heatmap-header"><div><h2>Expense activity</h2><p>Your spending in {selectedMonthLabel}, day by day</p></div><div><span>{calendarData.activeDays} active days · {money.format(calendarData.total)} tracked</span></div></header>
         <div className="heatmap-scroll">
           <div className="heatmap-canvas">
             <div className="heatmap-months">{calendarData.months.map((month) => <span key={month.label} style={{ gridColumnStart: month.week }}>{month.label}</span>)}</div>
@@ -453,7 +454,7 @@ export default function Home() {
       </section>
 
       <section className="activity-board" id="activity">
-        <div className="activity-side"><span>Recent activity</span><h2>{expenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div>{visibleExpenses.length > 0 && <div className="bulk-actions"><label className="select-all-checkbox"><input type="checkbox" checked={selectedExpenses.size === visibleExpenses.length && visibleExpenses.length > 0} onChange={toggleSelectAll} /><span>Select all</span></label>{selectedExpenses.size > 0 && <button className="delete-selected" onClick={deleteSelectedExpenses}>Delete {selectedExpenses.size}</button>}</div>}</div>
+        <div className="activity-side"><span>{selectedMonthLabel} activity</span><h2>{selectedMonthExpenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div>{visibleExpenses.length > 0 && <div className="bulk-actions"><label className="select-all-checkbox"><input type="checkbox" checked={selectedExpenses.size === visibleExpenses.length && visibleExpenses.length > 0} onChange={toggleSelectAll} /><span>Select all</span></label>{selectedExpenses.size > 0 && <button className="delete-selected" onClick={deleteSelectedExpenses}>Delete {selectedExpenses.size}</button>}</div>}</div>
         <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className={`activity-tile ${selectedExpenses.has(expense._id) ? "selected" : ""}`} key={expense._id}><input type="checkbox" className="expense-checkbox" checked={selectedExpenses.has(expense._id)} onChange={() => toggleExpenseSelection(expense._id)} /><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}{expense.source === "bank" && <span className="bank-source">Synced</span>}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
       </section>
 
