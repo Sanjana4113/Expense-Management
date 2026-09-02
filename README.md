@@ -16,23 +16,19 @@ Email/password signup requires `MONGODB_URI`, `MONGODB_DB`, and `AUTH_SECRET`. P
 
 For Google sign-in, also add `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. In Google Cloud Console, create a Web OAuth client and add `http://localhost:3000/api/auth/callback/google` as a local redirect URI. For Vercel, add `https://YOUR-VERCEL-DOMAIN/api/auth/callback/google` as an authorized redirect URI.
 
-## Bank and card transaction syncing
+## Bank transaction syncing
 
-Ledgerly can import completed debit transactions from bank accounts and cards through TrueLayer Open Banking. Users connect through TrueLayer's hosted consent screen; Ledgerly never receives their bank password, PIN, or full card number. Access and refresh tokens are encrypted at rest, and imported transactions use their provider transaction ID to prevent duplicates.
+Ledgerly imports booked debit transactions through Enable Banking's Account Information API. Users authorize read-only access through Enable Banking and their bank; Ledgerly never receives their bank password, PIN, or card number. Imported transactions use the bank's stable entry reference and account ID to prevent duplicates.
 
-Create a TrueLayer application, register `http://localhost:3000/api/banking/callback` (and the equivalent production URL), then configure:
+Create an Enable Banking application, register the callback URL, export its private RSA key, Base64-encode the complete PEM file, then configure:
 
 ```env
-TRUELAYER_CLIENT_ID=your-client-id
-TRUELAYER_CLIENT_SECRET=your-client-secret
-TRUELAYER_REDIRECT_URI=https://your-public-test-domain.example/api/banking/callback
-TRUELAYER_ENVIRONMENT=sandbox
-TRUELAYER_PROVIDERS=uk-cs-mock
-# Optional: use a separate high-entropy secret instead of AUTH_SECRET for token encryption.
-BANK_TOKEN_ENCRYPTION_KEY=replace-with-a-long-random-secret
+ENABLE_BANKING_APPLICATION_ID=your-application-uuid
+ENABLE_BANKING_REDIRECT_URI=https://your-domain.example/api/banking/enablebanking/callback
+ENABLE_BANKING_PRIVATE_KEY_BASE64=base64-encoded-pem-private-key
 ```
 
-TrueLayer currently requires an HTTPS redirect URI, so use your deployed preview URL or an HTTPS development tunnel when testing locally. Use `TRUELAYER_ENVIRONMENT=production` and the provider groups enabled for your TrueLayer application when going live. MongoDB is required for connected accounts. Transactions synchronize when the user opens the dashboard and whenever they select **Sync now**.
+MongoDB is required for connected accounts. Users can connect multiple banks by country and account type. Booked debit transactions synchronize when the user opens the dashboard and whenever they select **Sync all**. Production applications restricted to linked accounts can access only the owner's accounts until Enable Banking grants unrestricted activation.
 
 ## Admin portal
 

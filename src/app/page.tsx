@@ -16,9 +16,13 @@ type Expense = {
 type BankConnection = {
   _id: string;
   status: "active" | "reauthorization_required";
-  accounts: { accountId: string; type: "account" | "card"; name: string; providerName: string }[];
+  bankName: string;
+  bankCountry: string;
+  accounts: { accountId: string; name: string; currency?: string }[];
   lastSyncedAt?: string;
 };
+
+type BankingInstitution = { name: string; country: string; logo?: string };
 
 const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
 
@@ -56,6 +60,12 @@ export default function Home() {
   const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
   const [bankStatus, setBankStatus] = useState("");
   const [bankSyncing, setBankSyncing] = useState(false);
+  const [bankConnectOpen, setBankConnectOpen] = useState(false);
+  const [bankCountry, setBankCountry] = useState("DE");
+  const [bankPsuType, setBankPsuType] = useState<"personal" | "business">("personal");
+  const [bankInstitutions, setBankInstitutions] = useState<BankingInstitution[]>([]);
+  const [selectedBank, setSelectedBank] = useState("");
+  const [banksLoading, setBanksLoading] = useState(false);
   const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -273,11 +283,41 @@ export default function Home() {
     setBankSyncing(false);
   }
 
-  async function disconnectBank() {
+  async function loadInstitutions(country = bankCountry, psuType = bankPsuType) {
+    setBanksLoading(true);
+    setBankStatus("");
+    const response = await fetch(`/api/banking/institutions?country=${encodeURIComponent(country)}&psuType=${psuType}`);
+    const data = await response.json();
+    if (!response.ok) setBankStatus(data.error || "Could not load banks.");
+    else {
+      setBankInstitutions(data.institutions || []);
+      setSelectedBank(data.institutions?.[0]?.name || "");
+    }
+    setBanksLoading(false);
+  }
+
+  async function openBankConnect() {
+    setBankConnectOpen(true);
+    if (!bankInstitutions.length) await loadInstitutions();
+  }
+
+  async function connectBank() {
+    if (!selectedBank) return;
+    setBanksLoading(true);
+    const response = await fetch("/api/banking/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bankName: selectedBank, country: bankCountry, psuType: bankPsuType }) });
+    const data = await response.json();
+    if (response.ok && data.url) window.location.assign(data.url);
+    else {
+      setBankStatus(data.error || "Could not start the bank connection.");
+      setBanksLoading(false);
+    }
+  }
+
+  async function disconnectBank(id: string) {
     if (!window.confirm("Disconnect this bank? Imported expenses will stay in your ledger.")) return;
-    const response = await fetch("/api/banking/connections", { method: "DELETE" });
+    const response = await fetch(`/api/banking/connections?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     if (response.ok) {
-      setBankConnections([]);
+      setBankConnections((current) => current.filter((connection) => connection._id !== id));
       setBankStatus("Bank disconnected. Previously imported expenses were kept.");
     }
   }
@@ -389,12 +429,13 @@ export default function Home() {
 
       <section className="bank-panel" id="connected-accounts">
         <div className="bank-panel-copy"><span>Connected accounts</span><h2>Bring card purchases into your ledger.</h2><p>Connect through secure Open Banking consent. Ledgerly never receives your card number, PIN, or bank password.</p></div>
-        {bankConnections.length ? <div className="bank-connection">
+        {bankConnections.map((connection) => <div className="bank-connection" key={connection._id}>
           <div className="bank-mark">↗</div>
-          <div><strong>{bankConnections[0].accounts[0]?.providerName || "Connected bank"}</strong><span>{bankConnections[0].accounts.length} account{bankConnections[0].accounts.length === 1 ? "" : "s"} · {bankConnections[0].status === "active" ? "Connected" : "Reconnect required"}</span>{bankConnections[0].lastSyncedAt && <small>Last synced {new Date(bankConnections[0].lastSyncedAt).toLocaleString()}</small>}</div>
-          <button className="bank-sync" type="button" onClick={syncBank} disabled={bankSyncing}>{bankSyncing ? "Syncing…" : "Sync now"}</button>
-          <button className="bank-disconnect" type="button" onClick={disconnectBank}>Disconnect</button>
-        </div> : <div className="bank-connect-state"><div><strong>{bankConfigured ? "Connect your bank or card" : "Open Banking setup required"}</strong><span>{bankConfigured ? "You will choose your bank and approve read-only transaction access." : "Add your TrueLayer credentials to enable secure bank connections."}</span></div>{bankConfigured ? <a className="bank-connect" href="/api/banking/connect">Connect account <b>↗</b></a> : <span className="bank-disabled">Not configured</span>}</div>}
+          <div><strong>{connection.bankName}</strong><span>{connection.accounts.length} account{connection.accounts.length === 1 ? "" : "s"} · {connection.bankCountry} · {connection.status === "active" ? "Connected" : "Reconnect required"}</span>{connection.lastSyncedAt && <small>Last synced {new Date(connection.lastSyncedAt).toLocaleString()}</small>}</div>
+          <button className="bank-disconnect" type="button" onClick={() => disconnectBank(connection._id)}>Disconnect</button>
+        </div>)}
+        <div className="bank-connect-state"><div><strong>{bankConfigured ? (bankConnections.length ? "Connect another account" : "Connect your bank or card") : "Open Banking setup required"}</strong><span>{bankConfigured ? "Choose a country and bank, then approve read-only access through Enable Banking." : "Add your Enable Banking application ID and private key to enable connections."}</span></div>{bankConfigured ? <button className="bank-connect" type="button" onClick={openBankConnect}>Connect account <b>↗</b></button> : <span className="bank-disabled">Not configured</span>}{bankConnections.length > 0 && <button className="bank-sync" type="button" onClick={syncBank} disabled={bankSyncing}>{bankSyncing ? "Syncing…" : "Sync all"}</button>}</div>
+        {bankConnectOpen && <div className="bank-picker"><div className="bank-picker-fields"><label>Country<select value={bankCountry} onChange={async (event) => { const value = event.target.value; setBankCountry(value); await loadInstitutions(value, bankPsuType); }}><option value="DE">Germany</option><option value="LT">Lithuania</option><option value="IE">Ireland</option><option value="AT">Austria</option><option value="NL">Netherlands</option><option value="FR">France</option><option value="ES">Spain</option><option value="IT">Italy</option><option value="GB">United Kingdom</option></select></label><label>Account type<select value={bankPsuType} onChange={async (event) => { const value = event.target.value as "personal" | "business"; setBankPsuType(value); await loadInstitutions(bankCountry, value); }}><option value="personal">Personal</option><option value="business">Business</option></select></label><label>Bank<select value={selectedBank} onChange={(event) => setSelectedBank(event.target.value)} disabled={banksLoading}>{banksLoading ? <option>Loading banks…</option> : bankInstitutions.map((institution) => <option key={`${institution.country}-${institution.name}`} value={institution.name}>{institution.name}</option>)}</select></label></div><div className="bank-picker-actions"><button type="button" className="bank-disconnect" onClick={() => setBankConnectOpen(false)}>Cancel</button><button type="button" className="bank-connect" onClick={connectBank} disabled={banksLoading || !selectedBank}>{banksLoading ? "Please wait…" : "Continue securely"}</button></div></div>}
         {bankStatus && <p className="bank-status" role="status">{bankStatus}</p>}
         <div className="bank-trust"><span>Read-only access</span><span>Encrypted connection</span><span>Duplicate protected</span><span>Automatic categories</span></div>
       </section>

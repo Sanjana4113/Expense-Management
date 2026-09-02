@@ -11,14 +11,14 @@ export async function POST() {
   if (!session?.user?.id) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   const database = await getDatabase();
   if (!database) return NextResponse.json({ error: "MongoDB is required for bank syncing." }, { status: 503 });
-  const connection = await database.collection<BankConnection>("bankConnections").findOne({ ownerId: session.user.id, provider: "truelayer" });
-  if (!connection) return NextResponse.json({ error: "Connect a bank account first." }, { status: 404 });
+  const connections = await database.collection<BankConnection>("bankConnections").find({ ownerId: session.user.id, provider: "enablebanking" }).toArray();
+  if (!connections.length) return NextResponse.json({ error: "Connect a bank account first." }, { status: 404 });
   try {
-    const imported = await syncBankConnection(database, connection);
+    let imported = 0;
+    for (const connection of connections) imported += await syncBankConnection(database, connection);
     return NextResponse.json({ imported, syncedAt: new Date() });
   } catch (error) {
     console.error("Bank sync failed", error);
-    await database.collection("bankConnections").updateOne({ ownerId: session.user.id, provider: "truelayer" }, { $set: { status: "reauthorization_required", updatedAt: new Date() } });
-    return NextResponse.json({ error: "The bank connection needs to be authorized again." }, { status: 502 });
+    return NextResponse.json({ error: "Could not synchronize one or more bank accounts. Reconnect any expired account." }, { status: 502 });
   }
 }
