@@ -26,9 +26,10 @@ Create an Enable Banking application, register the callback URL, export its priv
 ENABLE_BANKING_APPLICATION_ID=your-application-uuid
 ENABLE_BANKING_REDIRECT_URI=https://your-domain.example/api/banking/enablebanking/callback
 ENABLE_BANKING_PRIVATE_KEY_BASE64=base64-encoded-pem-private-key
+CRON_SECRET=generate-a-random-value-with-at-least-16-characters
 ```
 
-MongoDB is required for connected accounts. Users can connect multiple banks by country and account type. Booked debit transactions synchronize when the user opens the dashboard and whenever they select **Sync all**. Production applications restricted to linked accounts can access only the owner's accounts until Enable Banking grants unrestricted activation.
+MongoDB is required for connected accounts. Users can connect multiple banks by country and account type. Booked debit transactions synchronize once daily through a secured Vercel Cron Job and whenever the user selects **Sync all**. A recent manual sync causes the scheduled run to skip that connection, reducing the chance of exceeding bank access limits. Production applications restricted to linked accounts can access only the owner's accounts until Enable Banking grants unrestricted activation.
 
 ## Admin portal
 
@@ -37,8 +38,8 @@ The primary administrator accounts are `sanjanabh2003@gmail.com` and `indudhara2
 ## Deploy to Vercel
 
 1. Push this repository to GitHub and import it at [vercel.com/new](https://vercel.com/new).
-2. In the Vercel project settings, add `MONGODB_URI` and `MONGODB_DB` under Environment Variables.
+2. In the Vercel project settings, add the variables from `.env.example` under Environment Variables. Generate a random `CRON_SECRET` containing at least 16 characters; Vercel sends it as the scheduled request's bearer token.
 3. In MongoDB Atlas, add `0.0.0.0/0` to Network Access or configure a narrower Vercel egress policy.
 4. Redeploy the project.
 
-No `vercel.json` is required; Vercel detects the Next.js framework automatically.
+The cron configuration in `vercel.json` runs `/api/cron/bank-sync` daily at 05:00 UTC. Vercel Cron runs only on production deployments.
