@@ -56,6 +56,9 @@ export default function Home() {
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [entryMode, setEntryMode] = useState<"add" | "schedule">("add");
   const [selectedMonth, setSelectedMonth] = useState(() => dateKey(new Date()).slice(0, 7));
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [monthPickerView, setMonthPickerView] = useState<"months" | "years">("months");
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [bankConfigured, setBankConfigured] = useState(false);
   const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
@@ -401,7 +404,29 @@ export default function Home() {
       <nav className="flow-nav">
         <div className="flow-logo">ledgerly<span /></div>
         <div className="flow-links"><button className="active">Overview</button><button onClick={() => document.getElementById("activity")?.scrollIntoView({ behavior: "smooth" })}>Activity</button><button onClick={() => document.getElementById("connected-accounts")?.scrollIntoView({ behavior: "smooth" })}>Accounts</button><button onClick={() => setEditingIncome(true)}>Planning</button>{hasAdminAccess && <button onClick={() => router.push("/admin")}>Admin</button>}</div>
-        <div className="flow-actions"><div className="flow-month"><select aria-label="Select dashboard month and year" value={selectedMonth} onChange={(event) => { setSelectedMonth(event.target.value); setShowAll(false); setSelectedExpenses(new Set()); }}>{availableYears.flatMap((year) => monthNames.map((name, index) => { const value = `${year}-${String(index + 1).padStart(2, "0")}`; return <option key={value} value={value}>{name} {year}</option>; }))}</select></div><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button><button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button><button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button><button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button></div>
+        <div className="flow-actions">
+          <div className="month-picker">
+            <button className="flow-month month-trigger" type="button" aria-haspopup="dialog" aria-expanded={monthPickerOpen} onClick={() => { setPickerYear(Number(selectedMonth.slice(0, 4))); setMonthPickerView("months"); setMonthPickerOpen((open) => !open); }}>
+              <span>{selectedMonthLabel}</span><b>▾</b>
+            </button>
+            {monthPickerOpen && <div className="month-popover" role="dialog" aria-label="Choose month and year">
+              <div className="month-picker-header">
+                {monthPickerView === "months" && <button type="button" aria-label="Previous year" onClick={() => setPickerYear((year) => year - 1)}>‹</button>}
+                <button className="year-switch" type="button" onClick={() => setMonthPickerView((view) => view === "months" ? "years" : "months")}>{pickerYear}</button>
+                {monthPickerView === "months" && <button type="button" aria-label="Next year" onClick={() => setPickerYear((year) => year + 1)}>›</button>}
+              </div>
+              {monthPickerView === "months" ? <div className="month-grid">{monthNames.map((name, index) => {
+                const month = String(index + 1).padStart(2, "0");
+                const value = `${pickerYear}-${month}`;
+                return <button type="button" className={selectedMonth === value ? "active" : ""} key={name} onClick={() => { setSelectedMonth(value); setShowAll(false); setSelectedExpenses(new Set()); setMonthPickerOpen(false); }}>{name.slice(0, 3)}</button>;
+              })}</div> : <div className="year-grid">{availableYears.map((year) => <button type="button" className={pickerYear === year ? "active" : ""} key={year} onClick={() => { setPickerYear(year); setMonthPickerView("months"); }}>{year}</button>)}</div>}
+            </div>}
+          </div>
+          <button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`} title={`Switch to ${theme === "light" ? "dark" : "light"} theme`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}><span>{theme === "light" ? "☾" : "☀"}</span></button>
+          <button className="flow-avatar" aria-label="Account menu" title={session.user.email || "Account"}>{session.user.name?.slice(0, 2).toUpperCase() || "ME"}</button>
+          <button className="flow-add" onClick={() => openExpenseEntry("add")}>Add expense <b>+</b></button>
+          <button className="flow-signout" onClick={() => signOut({ callbackUrl: "/" })}>↗</button>
+        </div>
       </nav>
 
       {hasAdminAccess && !adminChoiceDismissed && <section className="flow-admin-choice"><span>You have administrator access.</span><button onClick={() => setAdminChoiceDismissed(true)}>Stay here</button><button onClick={() => router.push("/admin")}>Open admin portal ↗</button></section>}
