@@ -4,6 +4,18 @@ import type { Db } from "mongodb";
 const apiBase = "https://api.enablebanking.com";
 
 export type BankAccount = { accountId: string; name: string; currency?: string };
+export type PendingBankTransaction = {
+  ownerId: string;
+  externalProvider: "enablebanking";
+  externalTransactionId: string;
+  bankAccountId: string;
+  title: string;
+  amount: number;
+  category: string;
+  date: string;
+  currency: string;
+  lastSeenAt: Date;
+};
 export type BankConnection = {
   ownerId: string;
   provider: "enablebanking";
@@ -141,6 +153,11 @@ function transactionReference(transaction: EnableTransaction, accountId: string)
 }
 
 export async function syncBankConnection(database: Db, connection: BankConnection) {
+  await database.collection("pendingBankTransactions").createIndex(
+    { ownerId: 1, externalProvider: 1, externalTransactionId: 1 },
+    { unique: true },
+  );
+  const syncStartedAt = new Date();
   const from = new Date(connection.lastSyncedAt || Date.now() - 90 * 86_400_000);
   from.setDate(from.getDate() - 3);
   const dateFrom = from.toISOString().slice(0, 10);
@@ -157,19 +174,54 @@ export async function syncBankConnection(database: Db, connection: BankConnectio
         const rawAmount = Number(transaction.transaction_amount?.amount);
         const isDebit = transaction.credit_debit_indicator === "DBIT" || rawAmount < 0;
         const date = transaction.booking_date || transaction.value_date || transaction.transaction_date;
-        if (!isDebit || !date || !Number.isFinite(rawAmount) || rawAmount === 0 || (transaction.status && transaction.status !== "BOOK")) continue;
+        if (!isDebit || !date || !Number.isFinite(rawAmount) || rawAmount === 0) continue;
         const reference = transactionReference(transaction, account.accountId);
         const title = (transaction.creditor?.name || transaction.remittance_information?.find(Boolean) || transaction.bank_transaction_code?.description || "Bank purchase").trim().slice(0, 120);
+        const amount = Math.abs(rawAmount);
+        const currency = transaction.transaction_amount?.currency || account.currency || "EUR";
+
+        if (transaction.status === "PDNG") {
+          await database.collection<PendingBankTransaction>("pendingBankTransactions").updateOne(
+            { ownerId: connection.ownerId, externalProvider: "enablebanking", externalTransactionId: reference },
+            { $set: { ownerId: connection.ownerId, externalProvider: "enablebanking", externalTransactionId: reference, bankAccountId: account.accountId, title, amount, category: categoryFor(transaction), date: date.slice(0, 10), currency, lastSeenAt: syncStartedAt } },
+            { upsert: true },
+          );
+          continue;
+        }
+        if (transaction.status && transaction.status !== "BOOK") continue;
+
         const result = await database.collection("expenses").updateOne(
           { ownerId: connection.ownerId, externalProvider: "enablebanking", externalTransactionId: reference },
-          { $setOnInsert: { ownerId: connection.ownerId, title, amount: Math.abs(rawAmount), category: categoryFor(transaction), date: date.slice(0, 10), currency: transaction.transaction_amount?.currency || account.currency || "EUR", source: "bank", externalProvider: "enablebanking", externalTransactionId: reference, bankAccountId: account.accountId, importedAt: new Date() } },
+          { $setOnInsert: { ownerId: connection.ownerId, title, amount, category: categoryFor(transaction), date: date.slice(0, 10), currency, source: "bank", externalProvider: "enablebanking", externalTransactionId: reference, bankAccountId: account.accountId, importedAt: new Date() } },
           { upsert: true },
         );
         imported += result.upsertedCount;
+        const bookedDate = new Date(`${date.slice(0, 10)}T12:00:00Z`);
+        const earliest = new Date(bookedDate);
+        const latest = new Date(bookedDate);
+        earliest.setUTCDate(earliest.getUTCDate() - 3);
+        latest.setUTCDate(latest.getUTCDate() + 3);
+        await database.collection<PendingBankTransaction>("pendingBankTransactions").deleteMany({
+          ownerId: connection.ownerId,
+          bankAccountId: account.accountId,
+          $or: [
+            { externalTransactionId: reference },
+            { title, amount, currency, date: { $gte: earliest.toISOString().slice(0, 10), $lte: latest.toISOString().slice(0, 10) } },
+          ],
+        });
       }
       continuationKey = data.continuation_key || undefined;
       page += 1;
     } while (continuationKey && page < 50);
+    const staleCutoff = new Date(syncStartedAt.getTime() - 14 * 86_400_000);
+    await database.collection<PendingBankTransaction>("pendingBankTransactions").deleteMany({
+      ownerId: connection.ownerId,
+      bankAccountId: account.accountId,
+      $or: [
+        { date: { $gte: dateFrom, $lte: dateTo }, lastSeenAt: { $lt: syncStartedAt } },
+        { lastSeenAt: { $lt: staleCutoff } },
+      ],
+    });
   }
   await database.collection<BankConnection>("bankConnections").updateOne({ ownerId: connection.ownerId, provider: "enablebanking", sessionId: connection.sessionId }, { $set: { lastSyncedAt: new Date(), updatedAt: new Date(), status: "active" } });
   return imported;

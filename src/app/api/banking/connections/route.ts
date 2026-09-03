@@ -26,6 +26,8 @@ export async function DELETE(request: Request) {
     const connection = await database.collection("bankConnections").findOne({ _id: objectId, ownerId: session.user.id, provider: "enablebanking" });
     if (!connection) return NextResponse.json({ error: "Connection not found." }, { status: 404 });
     try { await closeBankSession(String(connection.sessionId)); } catch (error) { console.error("Could not close remote bank session", error); }
+    const accountIds = Array.isArray(connection.accounts) ? connection.accounts.map((account: { accountId: string }) => account.accountId) : [];
+    if (accountIds.length) await database.collection("pendingBankTransactions").deleteMany({ ownerId: session.user.id, bankAccountId: { $in: accountIds } });
     await database.collection("bankConnections").deleteOne({ _id: objectId, ownerId: session.user.id });
   }
   return NextResponse.json({ ok: true });

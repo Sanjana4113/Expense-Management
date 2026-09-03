@@ -24,6 +24,7 @@ export async function GET(request: Request) {
       { upsert: true },
     );
     await database.collection("expenses").createIndex({ ownerId: 1, externalProvider: 1, externalTransactionId: 1 }, { unique: true, sparse: true });
+    await database.collection("pendingBankTransactions").createIndex({ ownerId: 1, externalProvider: 1, externalTransactionId: 1 }, { unique: true });
     dashboard.searchParams.set("bank", "connected");
   } catch (error) {
     console.error("Enable Banking callback failed", error);

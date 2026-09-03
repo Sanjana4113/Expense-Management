@@ -12,9 +12,12 @@ export async function GET() {
   const ownerId = session.user.id;
   try {
     const database = await getDatabase();
-    if (!database) return NextResponse.json({ expenses: localExpenses.filter((expense) => expense.ownerId === ownerId) });
-    const expenses = await database.collection("expenses").find({ ownerId }).sort({ date: -1 }).toArray();
-    return NextResponse.json({ expenses });
+    if (!database) return NextResponse.json({ expenses: localExpenses.filter((expense) => expense.ownerId === ownerId), pendingExpenses: [] });
+    const [expenses, pendingExpenses] = await Promise.all([
+      database.collection("expenses").find({ ownerId }).sort({ date: -1 }).toArray(),
+      database.collection("pendingBankTransactions").find({ ownerId }).sort({ date: -1 }).toArray(),
+    ]);
+    return NextResponse.json({ expenses, pendingExpenses });
   } catch (error) {
     console.error("Failed to load expenses", error);
     return NextResponse.json({ error: "Could not connect to MongoDB. Check your .env.local settings." }, { status: 503 });

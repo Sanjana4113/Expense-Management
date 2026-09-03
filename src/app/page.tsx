@@ -22,6 +22,8 @@ type BankConnection = {
   lastSyncedAt?: string;
 };
 
+type PendingExpense = Omit<Expense, "source"> & { currency?: string };
+
 type BankingInstitution = { name: string; country: string; logo?: string };
 
 const categories = ["Food", "Transport", "Home", "Work", "Health", "Other"];
@@ -37,6 +39,7 @@ export default function Home() {
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [pendingExpenses, setPendingExpenses] = useState<PendingExpense[]>([]);
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Food");
@@ -76,7 +79,10 @@ export default function Home() {
     if (sessionStatus !== "authenticated") return;
     const loadExpenses = () => fetch("/api/expenses")
       .then((response) => response.json())
-      .then((data: { expenses?: Expense[] }) => setExpenses(data.expenses || []));
+      .then((data: { expenses?: Expense[]; pendingExpenses?: PendingExpense[] }) => {
+        setExpenses(data.expenses || []);
+        setPendingExpenses(data.pendingExpenses || []);
+      });
     loadExpenses().catch(() => undefined);
     fetch("/api/admin/access")
       .then((response) => response.json())
@@ -109,6 +115,10 @@ export default function Home() {
     () => expenses.filter((expense) => expense.date.startsWith(selectedMonth)),
     [expenses, selectedMonth],
   );
+  const selectedMonthPending = useMemo(
+    () => pendingExpenses.filter((expense) => expense.date.startsWith(selectedMonth)),
+    [pendingExpenses, selectedMonth],
+  );
   const filteredExpenses = useMemo(
     () => filter === "All" ? selectedMonthExpenses : selectedMonthExpenses.filter((expense) => expense.category === filter),
     [selectedMonthExpenses, filter],
@@ -125,6 +135,7 @@ export default function Home() {
     ...expenses.map((expense) => Number(expense.date.slice(0, 4))).filter(Number.isFinite),
   ])).sort((a, b) => b - a);
   const thisMonth = selectedMonthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const pendingThisMonth = selectedMonthPending.reduce((sum, expense) => sum + expense.amount, 0);
   const monthlySavings = monthlyIncome === null ? null : monthlyIncome - thisMonth;
   const monthCategoryTotals = categories
     .map((name) => ({ name, amount: selectedMonthExpenses.filter((expense) => expense.category === name).reduce((sum, expense) => sum + expense.amount, 0) }))
@@ -288,6 +299,7 @@ export default function Home() {
       const expensesResponse = await fetch("/api/expenses");
       const expensesData = await expensesResponse.json();
       setExpenses(expensesData.expenses || []);
+      setPendingExpenses(expensesData.pendingExpenses || []);
       const syncedBanks = new Set<string>((data.synced || []).filter((item: { skipped?: boolean }) => !item.skipped).map((item: { bankName: string }) => item.bankName));
       setBankConnections((current) => current.map((connection) => syncedBanks.has(connection.bankName) ? { ...connection, lastSyncedAt: data.syncedAt } : connection));
     }
@@ -451,7 +463,7 @@ export default function Home() {
               <div className="journey-legend"><span><i />Spent {Math.round(spentPercent)}%</span><span><i />Remaining {Math.round(remainingPercent)}%</span></div>
               {isOverBudget && <p className="budget-warning">You are {money.format(thisMonth - incomeForFlow)} over this month&apos;s income.</p>}
             </div>
-            <div className="balance-results"><div className="result-spent"><span>Spent</span><strong>{money.format(thisMonth)}</strong></div><div className={isOverBudget ? "result-saved negative" : "result-saved"}><span>{isOverBudget ? "Over budget" : "Remaining"}</span><strong>{monthlySavings === null ? "—" : money.format(Math.abs(monthlySavings))}</strong></div></div>
+            <div className="balance-results"><div className="result-spent"><span>Spent</span><strong>{money.format(thisMonth)}</strong></div><div className="result-pending"><span>Pending</span><strong>{money.format(pendingThisMonth)}</strong></div><div className={isOverBudget ? "result-saved negative" : "result-saved"}><span>{isOverBudget ? "Over budget" : "Remaining"}</span><strong>{monthlySavings === null ? "—" : money.format(Math.abs(monthlySavings))}</strong></div></div>
           </div>
           <div className="category-flow-heading"><div><span>Expense breakdown</span><strong>{flowCategories[0]?.amount ? `${flowCategories[0].name} is highest` : "No spending yet"}</strong></div><span>{selectedMonthExpenses.length} transactions</span></div>
           <div className="flow-category-grid">{flowCategories.map((item, index) => <article className={`flow-category-card ${item.name.toLowerCase()}`} key={item.name}><div><span>{String(index + 1).padStart(2, "0")}</span><i>{item.name.slice(0, 1)}</i></div><strong>{item.name}</strong><b>{money.format(item.amount)}</b><div className="category-meter"><i style={{ width: `${thisMonth ? (item.amount / thisMonth) * 100 : 0}%` }} /></div><small>{thisMonth ? Math.round((item.amount / thisMonth) * 100) : 0}% of monthly spend</small></article>)}</div>
@@ -488,6 +500,7 @@ export default function Home() {
       <section className="activity-board" id="activity">
         <div className="activity-side"><span>{selectedMonthLabel} activity</span><h2>{selectedMonthExpenses.length} entries</h2><div className="filters">{["All", ...categories].map((item) => <button key={item} className={filter === item ? "filter active" : "filter"} onClick={() => { setFilter(item); setShowAll(false); }}>{item}</button>)}</div>{visibleExpenses.length > 0 && <div className="bulk-actions"><label className="select-all-checkbox"><input type="checkbox" checked={selectedExpenses.size === visibleExpenses.length && visibleExpenses.length > 0} onChange={toggleSelectAll} /><span>Select all</span></label>{selectedExpenses.size > 0 && <button className="delete-selected" onClick={deleteSelectedExpenses}>Delete {selectedExpenses.size}</button>}</div>}</div>
         <div className="activity-list">{visibleExpenses.length ? visibleExpenses.map((expense) => <article className={`activity-tile ${selectedExpenses.has(expense._id) ? "selected" : ""}`} key={expense._id}><input type="checkbox" className="expense-checkbox" checked={selectedExpenses.has(expense._id)} onChange={() => toggleExpenseSelection(expense._id)} /><div className={`category-icon ${expense.category.toLowerCase()}`}>{expense.category.slice(0, 1)}</div><div><strong>{expense.title}{expense.source === "bank" && <span className="bank-source">Synced</span>}</strong><small>{expense.category} · {new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><button aria-label={`Delete ${expense.title}`} onClick={() => removeExpense(expense._id)}>×</button></article>) : <p className="empty-state">No expenses in this category yet.</p>}{filteredExpenses.length > 5 && <button className="view-more" onClick={() => setShowAll((current) => !current)}>{showAll ? "Show fewer" : "View all expenses"} ↗</button>}</div>
+        <aside className="pending-panel"><span>Pending</span><h2>{money.format(pendingThisMonth)}</h2><p>Not included in confirmed spending</p>{selectedMonthPending.length ? <div>{selectedMonthPending.map((expense) => <article className="pending-tile" key={expense._id}><div><strong>{expense.title}</strong><small>{new Date(`${expense.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{money.format(expense.amount)}</b><span>Pending</span></article>)}</div> : <p className="pending-empty">No pending card payments.</p>}</aside>
       </section>
 
       {editingIncome && <div className="entry-backdrop income-backdrop" role="presentation" onMouseDown={() => setEditingIncome(false)}><section className="income-modal" role="dialog" aria-modal="true" aria-labelledby="income-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setEditingIncome(false)}>×</button><span>Monthly planning</span><h2 id="income-modal-title">{monthlyIncome === null ? "Add monthly income" : "Update monthly income"}</h2><p>This lets Ledgerly calculate what remains after your monthly expenses.</p><form onSubmit={saveIncome}><label>Monthly income<div className="amount-input"><span>$</span><input autoFocus type="number" min="0" step="0.01" value={incomeInput} onChange={(event) => setIncomeInput(event.target.value)} placeholder="0.00" required /></div></label><button className="flow-add">Save income</button>{incomeStatus && <p className="form-status">{incomeStatus}</p>}</form></section></div>}
