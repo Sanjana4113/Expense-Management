@@ -292,15 +292,22 @@ export default function Home() {
     const data = await response.json();
     if (!response.ok) setBankStatus(data.error || "Could not sync your bank account.");
     else {
+      const syncResults = Array.isArray(data.synced) ? data.synced as { bankName: string; skipped?: boolean }[] : [];
+      const allSkipped = syncResults.length > 0 && syncResults.every((item) => item.skipped);
       const failureMessage = Array.isArray(data.failures) && data.failures.length
         ? ` ${data.failures.map((failure: { bankName: string; reason: string }) => `${failure.bankName}: ${failure.reason}`).join(" ")}`
         : "";
-      setBankStatus(`${data.imported ? `${data.imported} new purchase${data.imported === 1 ? "" : "s"} imported.` : "Everything available is up to date."}${failureMessage}`);
+      const successMessage = allSkipped
+        ? "Your banks were synced recently. Wait 15 minutes before syncing again."
+        : data.imported
+          ? `${data.imported} new purchase${data.imported === 1 ? "" : "s"} imported.`
+          : "Everything available is up to date.";
+      setBankStatus(`${successMessage}${failureMessage}`);
       const expensesResponse = await fetch("/api/expenses");
       const expensesData = await expensesResponse.json();
       setExpenses(expensesData.expenses || []);
       setPendingExpenses(expensesData.pendingExpenses || []);
-      const syncedBanks = new Set<string>((data.synced || []).filter((item: { skipped?: boolean }) => !item.skipped).map((item: { bankName: string }) => item.bankName));
+      const syncedBanks = new Set<string>(syncResults.filter((item) => !item.skipped).map((item) => item.bankName));
       setBankConnections((current) => current.map((connection) => syncedBanks.has(connection.bankName) ? { ...connection, lastSyncedAt: data.syncedAt } : connection));
     }
     setBankSyncing(false);
