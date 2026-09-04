@@ -29,7 +29,7 @@ ENABLE_BANKING_PRIVATE_KEY_BASE64=base64-encoded-pem-private-key
 CRON_SECRET=generate-a-random-value-with-at-least-16-characters
 ```
 
-MongoDB is required for connected accounts. Users can connect multiple banks by country and account type. Booked debit transactions synchronize once daily through a secured Vercel Cron Job and whenever the user selects **Sync all**. A recent manual sync causes the scheduled run to skip that connection, reducing the chance of exceeding bank access limits. Production applications restricted to linked accounts can access only the owner's accounts until Enable Banking grants unrestricted activation.
+MongoDB is required for connected accounts. Users can connect multiple banks by country and account type. Booked debit transactions synchronize once daily through a secured Vercel Cron Job and whenever the user selects **Sync all**. A manual sync within six hours of the scheduled run causes that connection to be skipped, reducing the chance of exceeding bank access limits without suppressing the next day's sync. Production applications restricted to linked accounts can access only the owner's accounts until Enable Banking grants unrestricted activation.
 
 ## Admin portal
 

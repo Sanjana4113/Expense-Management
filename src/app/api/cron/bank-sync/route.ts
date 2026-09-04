@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 
   for (const connection of connections) {
     const lastSyncedAt = connection.lastSyncedAt ? new Date(connection.lastSyncedAt) : null;
-    if (lastSyncedAt && startedAt.getTime() - lastSyncedAt.getTime() < 20 * 60 * 60_000) {
+    if (lastSyncedAt && startedAt.getTime() - lastSyncedAt.getTime() < 6 * 60 * 60_000) {
       results.push({ bankName: connection.bankName, status: "skipped" });
       continue;
     }
